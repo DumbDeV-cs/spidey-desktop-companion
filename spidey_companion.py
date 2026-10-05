@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 # --------------------------------------------------------------------------- layout
 W, H = 380, 300
 BG = '#050810'                 # window colour that gets keyed out as transparent
-PIVOT = (270, 58)              # where the web strand ends / Spidey's ankles hang
+PIVOT = (252, 48)              # web grip near the top-right corner
 SPR_W, SPR_H = 240, 232        # sprite canvas (px)
 SPR_PIV = (120, 10)            # pivot inside the sprite canvas
 S = 1.5                        # final px per sprite unit
@@ -84,8 +84,9 @@ def make_web():
     A = (W - 3, 3)
     n_rad = 9
     angs = [math.radians(88 + i * (94 / (n_rad - 1)) + rng.uniform(-1.5, 1.5)) for i in range(n_rad)]
-    length = 215
-    rings = [24, 42, 62, 84, 108, 134, 162, 192]
+    # Keep the orb web as a compact corner flourish; the hero stays the focus.
+    length = 132
+    rings = [16, 27, 39, 52, 66, 81, 98, 118]
 
     def pt(r, a):
         return (A[0] + math.cos(a) * r, A[1] + math.sin(a) * r)
@@ -170,7 +171,7 @@ def make_spidey(idx=0, blink=0, waving=False, squint=False):
 
     # --- legs (hang up toward the web), blue suit with red boots
     for s in (-1, 1):
-        knee = (s * (7 + (2.4 if s > 0 else 0)) + lsw * 1.3 * s, 40)
+        knee = (s * (15 + (2.4 if s > 0 else 0)) + lsw * 1.1 * s, 39)
         ankle = (s * 3.4, 12)
         hip = (s * 6.2, 62)
         limb([hip, knee], 11.5, BLUE)
@@ -200,19 +201,19 @@ def make_spidey(idx=0, blink=0, waving=False, squint=False):
                     [(0, 79), (5.6, 79.6), (8.8, 83)], [(0, 80.5), (4, 83.5), (6.8, 88)]):
             tube([(s * x, y) for x, y in pts], .9, INK)
 
-    # --- arms: hang by his sides, left one waves when he's talking
+    # --- arms: bent and splayed in a compact inverted hero crouch
     wv = (idx % 16) / 16 * math.tau
     for s in (-1, 1):
-        sh = (s * 13.2, 84)
+        sh = (s * 13.2, 82)
         if s == -1 and waving:
-            el = (-23.5, 93 + math.sin(wv) * .8)
+            el = (-23.5, 91 + math.sin(wv) * .8)
             a = .72 + .5 * math.sin(wv)
-            wr = (el[0] - 17 * math.sin(a), el[1] + 17 * math.cos(a))
+            wr = (el[0] - 15 * math.sin(a), el[1] + 15 * math.cos(a))
         else:
-            el = (s * (19.5 + sway * 1.2), 98)
-            wr = (s * (22.5 + sway * 2.4), 115 + sway * .8)
-        limb([sh, el], 8.6, RED)
-        limb([el, wr], 7.0, RED)
+            el = (s * (23.0 + sway * 1.2), 94)
+            wr = (s * (16.5 + sway * 2.0), 108 + sway * .8)
+        limb([sh, el], 8.8, RED)
+        limb([el, wr], 7.2, RED)
         dx, dy = wr[0] - el[0], wr[1] - el[1]
         ln = math.hypot(dx, dy) or 1
         ux, uy = dx / ln, dy / ln
@@ -501,6 +502,7 @@ class DeskSpidey(tk.Tk):
         self.message_until = 0
         self.focus_left = 0
         self.focus_active = False
+        self.focus_job = None
         self.sessions = 0
         self.mood = 'Ready'
         self.missions = []
@@ -620,6 +622,9 @@ class DeskSpidey(tk.Tk):
     def focus(self):
         if self.focus_active:
             self.focus_active = False
+            if self.focus_job is not None:
+                self.after_cancel(self.focus_job)
+                self.focus_job = None
             self.say('Focus timer paused. Pick it up when you are ready.')
             return
         if not self.focus_left:
@@ -629,6 +634,7 @@ class DeskSpidey(tk.Tk):
         self.countdown()
 
     def countdown(self):
+        self.focus_job = None
         if not self.focus_left or not self.focus_active:
             return
         self.focus_left -= 1
@@ -638,7 +644,7 @@ class DeskSpidey(tk.Tk):
             self.thwip('NICE!', 'Focus complete! You did amazing. Take a short break!')
             self.message_until = self.scene.tick + 250
             return
-        self.after(1000, self.countdown)
+        self.focus_job = self.after(1000, self.countdown)
 
     def add_mission(self):
         from tkinter import simpledialog
