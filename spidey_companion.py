@@ -1,10 +1,10 @@
-"""Desk Spidey v5: smooth comic-style hero hanging upside down from a real orb web.
+"""Desk Spidey v7: compact pixel-art hero in the upside-down middle pose.
 
 Requires: pip install pillow
 Controls: click = swing, double-click = THWIP (impact frames!), right-click = menu, drag = move.
 
-What's new in v5
-  * Fully redrawn, anti-aliased Spidey (supersampled, shaded, outlined, proper mask webbing)
+What's new in v7
+  * Hand-built pixel-grid Spidey with the web-tied feet, tucked limbs, and hanging mask
   * Real orb web: radial strands, sagging spiral threads, dew glints, glowing anchor knot
   * Impact frames: white/black inverted hit-stop flashes -> starburst, shockwave, speed lines
   * Web-shot with splat, spark particles, screen shake, zoom punch, THWIP text
@@ -24,8 +24,6 @@ PIVOT = (252, 48)              # web grip near the top-right corner
 SPR_W, SPR_H = 240, 232        # sprite canvas (px)
 SPR_PIV = (120, 10)            # pivot inside the sprite canvas
 S = 1.5                        # final px per sprite unit
-R = 3                          # supersample factor
-U = S * R                      # supersampled px per sprite unit
 
 # --------------------------------------------------------------------------- palette
 INK = (10, 12, 20, 255)
@@ -123,139 +121,83 @@ def make_web():
 
 
 # --------------------------------------------------------------------------- the hero
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=128)
 def make_spidey(idx=0, blink=0, waving=False, squint=False):
-    """Draw Spidey hanging upside down by webbed ankles. Rendered 3x and downsampled."""
-    im = Image.new('RGBA', (SPR_W * R, SPR_H * R), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    ox, oy = SPR_PIV[0] * R, SPR_PIV[1] * R
-    ph = idx / 48 * math.tau
+    """Crisp pixel sprite: compact upside-down Spidey with ankles at the web."""
+    cell = 4
+    sprite = Image.new('RGBA', (SPR_W, SPR_H), (0, 0, 0, 0))
+    pix = Image.new('RGBA', (20, 36), (0, 0, 0, 0))
+    d = ImageDraw.Draw(pix)
+    ink = (9, 11, 19, 255)
+    red = (226, 24, 39, 255)
+    red_hi = (255, 83, 94, 255)
+    red_sh = (145, 10, 25, 255)
+    blue = (21, 75, 190, 255)
+    blue_hi = (68, 143, 248, 255)
+    white = (255, 250, 238, 255)
+    sway = int(math.sin(idx / 48 * math.tau))
 
-    def P(x, y):
-        return (ox + x * U, oy + y * U)
+    def limb(points, color, inner, outer=4, width=2):
+        d.line(points, fill=ink, width=outer, joint='curve')
+        for x, y in points:
+            d.rectangle((x-outer//2, y-outer//2, x+outer//2, y+outer//2), fill=ink)
+        d.line(points, fill=color, width=width, joint='curve')
+        for x, y in points:
+            d.rectangle((x-width//2, y-width//2, x+width//2, y+width//2), fill=color)
+        d.line([(x-1, y) for x, y in points], fill=inner, width=1, joint='curve')
 
-    def tube(pts, w, fill):
-        pp = [P(*p) for p in pts]
-        pw = max(1, int(w * U))
-        d.line(pp, fill=fill, width=pw, joint='curve')
-        r = pw / 2
-        for x, y in pp:
-            d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+    # Web tie and two sharply bent legs gathered above the body.
+    d.line((10, 0, 10, 3), fill=white, width=1)
+    d.rectangle((8, 2, 11, 4), fill=ink)
+    d.rectangle((9, 2, 10, 3), fill=white)
+    limb([(8, 4), (5, 7), (4, 10), (7, 13)], blue, blue_hi)
+    limb([(11, 4), (14, 7), (15, 10), (12, 13)], blue, blue_hi)
+    # Red boots point into the web, blue knee panels remain visible.
+    d.polygon([(6,4),(8,3),(9,5),(8,8),(6,8),(5,6)], fill=ink)
+    d.polygon([(7,4),(8,4),(8,7),(6,7),(6,6)], fill=red)
+    d.polygon([(11,3),(13,4),(14,6),(13,8),(11,8),(10,5)], fill=ink)
+    d.polygon([(12,4),(13,4),(13,7),(11,7),(11,5)], fill=red)
+    d.line((6,9,7,10), fill=blue_hi, width=1)
+    d.line((12,10,13,9), fill=blue_hi, width=1)
 
-    def limb(pts, w, col, ow=1.0):
-        """Outlined tube with a lit side and a shaded side."""
-        hi, sh = SHADE[col]
-        tube(pts, w + 2 * ow, INK)
-        tube(pts, w, col)
-        dx, dy = pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1]
-        ln = math.hypot(dx, dy) or 1
-        nx, ny = -dy / ln, dx / ln
-        if nx * -1 + ny * -.5 < 0:          # make the normal face the light (upper-left)
-            nx, ny = -nx, -ny
-        tube([(x - nx * w * .24, y - ny * w * .24) for x, y in pts], w * .30, sh)
-        tube([(x + nx * w * .20, y + ny * w * .20) for x, y in pts], w * .24, hi)
+    # Compact torso: red chest, blue waist, unmistakable black spider emblem.
+    d.polygon([(7,12),(9,11),(11,11),(13,12),(14,18),(12,22),(8,22),(6,18)], fill=ink)
+    d.polygon([(8,12),(9,12),(10,13),(11,12),(12,12),(13,13),(13,18),(11,20),(9,20),(7,18)], fill=red)
+    d.polygon([(8,19),(12,19),(13,21),(12,24),(8,24),(7,21)], fill=ink)
+    d.polygon([(9,20),(11,20),(12,21),(11,23),(9,23),(8,21)], fill=blue)
+    d.line((10,14,10,18), fill=ink, width=1)
+    d.line((10,15,8,14), fill=ink, width=1); d.line((10,15,12,14), fill=ink, width=1)
+    d.line((10,16,8,17), fill=ink, width=1); d.line((10,16,12,17), fill=ink, width=1)
+    d.point((8,13), fill=red_hi); d.point((12,13), fill=red_hi)
 
-    def poly(pts, fill, ow=1.0):
-        pp = [P(*p) for p in pts]
-        d.line(pp + [pp[0], pp[1]], fill=INK, width=max(1, int(2 * ow * U)), joint='curve')
-        d.polygon(pp, fill=fill)
+    # Arms bend outward, then tuck beside the hanging mask like the reference pose.
+    limb([(7,16),(4,18),(4,21),(6,23)], red, red_hi)
+    if waving:
+        limb([(13,16),(16,18),(16,20),(17+sway,18)], red, red_hi)
+    else:
+        limb([(13,16),(16,18),(16,21),(14,23)], red, red_hi)
+    d.rectangle((5,22,7,24), fill=ink); d.rectangle((5,22,6,23), fill=red)
+    d.rectangle((13,22,15,24), fill=ink); d.rectangle((14,22,14,23), fill=red)
 
-    def ell(cx, cy, rx, ry, fill, ow=0.0):
-        x, y = P(cx, cy)
-        if ow:
-            d.ellipse((x - (rx + ow) * U, y - (ry + ow) * U, x + (rx + ow) * U, y + (ry + ow) * U), fill=INK)
-        d.ellipse((x - rx * U, y - ry * U, x + rx * U, y + ry * U), fill=fill)
+    # Big hanging mask, bold eye lenses, and a simple visible web pattern.
+    d.ellipse((5,22,14,34), fill=ink)
+    d.ellipse((6,23,13,33), fill=red)
+    d.line((9,24,10,28,9,32), fill=red_sh, width=1)
+    d.line((7,27,10,28,13,27), fill=red_sh, width=1)
+    d.line((7,30,10,28,13,30), fill=red_sh, width=1)
+    if blink:
+        d.line((6,28,9,29), fill=ink, width=2)
+        d.line((11,29,14,28), fill=ink, width=2)
+    else:
+        d.polygon([(6,26),(8,25),(10,27),(9,29),(7,29)], fill=ink)
+        d.polygon([(14,26),(12,25),(10,27),(11,29),(13,29)], fill=ink)
+        d.polygon([(7,26),(8,26),(9,27),(8,28)], fill=white)
+        d.polygon([(13,26),(12,26),(11,27),(12,28)], fill=white)
+    d.point((7,24), fill=red_hi); d.point((12,24), fill=red_hi)
 
-    sway = math.sin(ph)
-    lsw = math.sin(ph + 1.2)
-
-    # --- legs (hang up toward the web), blue suit with red boots
-    for s in (-1, 1):
-        knee = (s * (15 + (2.4 if s > 0 else 0)) + lsw * 1.1 * s, 39)
-        ankle = (s * 3.4, 12)
-        hip = (s * 6.2, 62)
-        limb([hip, knee], 11.5, BLUE)
-        limb([knee, ankle], 9, BLUE)
-        boot = (ankle[0] + (knee[0] - ankle[0]) * .42, ankle[1] + (knee[1] - ankle[1]) * .42)
-        limb([ankle, boot], 10, RED)
-    # web cocoon binding the ankles + strand stub
-    tube([(0, 0), (0, 9)], 1.0, (236, 243, 255, 255))
-    ell(0, 10.5, 6.6, 3.4, (226, 236, 252, 255), ow=0.7)
-    for x0, x1 in ((-4, 3), (-2, 4), (-5, 1)):
-        tube([(x0, 9.2), (x1, 12)], .45, (140, 160, 190, 255))
-
-    # --- torso
-    poly([(-8.5, 58), (8.5, 58), (9.8, 70), (13.6, 82), (12.2, 90), (0, 93),
-          (-12.2, 90), (-13.6, 82), (-9.8, 70)], RED)
-    tube([(-6.8, 69), (-10, 88)], 2.4, RED_HI)
-    tube([(7.6, 69), (10.6, 86)], 3.2, RED_SH)
-    for s in (-1, 1):
-        tube([(s * 9.4, 66), (s * 12.4, 80)], 3.0, BLUE)
-    poly([(-9, 55), (9, 55), (9.7, 66), (-9.7, 66)], BLUE, .9)
-    tube([(-9.5, 66), (9.5, 66)], 1.2, INK)
-    # spider emblem (abdomen points toward the head, so it reads upside down)
-    ell(0, 79.8, 2.1, 3.6, INK)
-    ell(0, 74.8, 1.4, 1.5, INK)
-    for s in (-1, 1):
-        for pts in ([(0, 75.5), (3.8, 71.5), (8.2, 72)], [(0, 77), (5.5, 74.8), (9.2, 76.5)],
-                    [(0, 79), (5.6, 79.6), (8.8, 83)], [(0, 80.5), (4, 83.5), (6.8, 88)]):
-            tube([(s * x, y) for x, y in pts], .9, INK)
-
-    # --- arms: bent and splayed in a compact inverted hero crouch
-    wv = (idx % 16) / 16 * math.tau
-    for s in (-1, 1):
-        sh = (s * 13.2, 82)
-        if s == -1 and waving:
-            el = (-23.5, 91 + math.sin(wv) * .8)
-            a = .72 + .5 * math.sin(wv)
-            wr = (el[0] - 15 * math.sin(a), el[1] + 15 * math.cos(a))
-        else:
-            el = (s * (23.0 + sway * 1.2), 94)
-            wr = (s * (16.5 + sway * 2.0), 108 + sway * .8)
-        limb([sh, el], 8.8, RED)
-        limb([el, wr], 7.2, RED)
-        dx, dy = wr[0] - el[0], wr[1] - el[1]
-        ln = math.hypot(dx, dy) or 1
-        ux, uy = dx / ln, dy / ln
-        for t in (.5, .66, .82):                       # gauntlet web lines
-            cx, cy = el[0] + dx * t, el[1] + dy * t
-            tube([(cx - uy * 2.8, cy + ux * 2.8), (cx + uy * 2.8, cy - ux * 2.8)], .5, INK)
-        hx, hy = wr[0] + ux * 2.4, wr[1] + uy * 2.4
-        ell(hx - uy * 3.2 * s, hy + ux * 3.2 * s, 2.0, 2.4, RED, ow=.9)    # thumb
-        ell(hx, hy, 4.3, 4.3, RED, ow=1.0)                                  # fist
-        ell(hx - 1.2, hy - 1.4, 1.3, 1.3, RED_HI)
-
-    # --- head (crown points down because he is upside down)
-    hy = 101.5
-    ell(0, hy, 10.6, 12.8, RED_SH, ow=1.1)
-    ell(-.9, hy - 1.1, 9.7, 11.9, RED)
-    ell(-4.6, hy - 5.2, 2.0, 3.0, RED_HI)
-    crown = (0, hy + 12.2)
-    ends = [(10.6 * math.sin(math.radians(p)), hy - 12.8 * math.cos(math.radians(p)))
-            for p in (-82, -52, -22, 0, 22, 52, 82)]
-    for e in ends:
-        tube([crown, e], .55, INK)
-    for f in (.32, .56, .80):                          # concentric web threads, sagging to the crown
-        q = [(crown[0] + (e[0] - crown[0]) * f, crown[1] + (e[1] - crown[1]) * f) for e in ends]
-        path = [q[0]]
-        for a, b in zip(q, q[1:]):
-            m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-            path += [(m[0] + (crown[0] - m[0]) * .16, m[1] + (crown[1] - m[1]) * .16), b]
-        tube(path, .5, INK)
-    # big expressive lenses
-    k = (1.0, .55, .15)[blink] * (.72 if squint else 1.0)
-    cy_ = .3
-    lens = [(-8.6, 5.0), (-1.0, -.3), (-2.5, -4.2), (-7.8, -1.8)]
-    for s in (-1, 1):
-        pts = [(x * -s, hy + cy_ + (yu - cy_) * k) for x, yu in lens]
-        poly(pts, WHITE, .9)
-        if blink == 0:
-            a, b = pts[0], pts[1]
-            tube([(a[0] + (b[0] - a[0]) * .12, a[1] + 0.9), (a[0] + (b[0] - a[0]) * .62, a[1] + (b[1] - a[1]) * .62 + .9)],
-                 .6, (190, 205, 228, 255))
-
-    return im.resize((SPR_W, SPR_H), Image.Resampling.LANCZOS)
-
+    scaled = pix.resize((20*cell, 36*cell), Image.Resampling.NEAREST)
+    sprite.alpha_composite(scaled, (SPR_PIV[0]-10*cell, SPR_PIV[1]))
+    return sprite
 
 # --------------------------------------------------------------------------- the scene (pure PIL)
 class Scene:
@@ -329,7 +271,7 @@ class Scene:
         self.wave_left = max(0, self.wave_left - 1)
         self.squint = max(0, self.squint - 1)
         spr = make_spidey(self.tick % 48, self.blink_frame, waving, self.squint > 0)
-        rot = spr.rotate(math.degrees(self.ang), resample=Image.Resampling.BICUBIC, center=SPR_PIV)
+        rot = spr.rotate(math.degrees(self.ang), resample=Image.Resampling.NEAREST, center=SPR_PIV)
         layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         blit(layer, rot, PIVOT[0] - SPR_PIV[0], PIVOT[1] - SPR_PIV[1])
         self.center = self.xf(0, 75)
