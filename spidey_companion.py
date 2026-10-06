@@ -1,14 +1,14 @@
-"""Desk Spidey v7: compact pixel-art hero in the upside-down middle pose.
+"""Desk Spidey v9: chunky hand-drawn pixel-art hero hanging upside down by his web.
 
 Requires: pip install pillow
 Controls: click = swing, double-click = THWIP (impact frames!), right-click = menu, drag = move.
 
-What's new in v7
-  * Hand-built pixel-grid Spidey with the web-tied feet, tucked limbs, and hanging mask
-  * Real orb web: radial strands, sagging spiral threads, dew glints, glowing anchor knot
-  * Impact frames: white/black inverted hit-stop flashes -> starburst, shockwave, speed lines
-  * Web-shot with splat, spark particles, screen shake, zoom punch, THWIP text
-  * Idle animation: pendulum physics, breathing arm sway, blinking, waving, spidey-sense tingle
+What's new in v9
+  * Spidey redrawn by hand, pixel by pixel, in a chunky chibi style: black outline, red suit with
+    black web lines, blue arm "wings", white spider emblem, big head with angry white eyes
+  * Edge bevel (light top-left, shade bottom-right) so the flat pixels still feel 3D
+  * Hanging pose: feet tied to the web, legs together, arms bent out wide; right arm waves
+  * Everything else kept: orb web, impact frames, THWIP, particles, pendulum swing
 """
 import math
 import random
@@ -23,15 +23,7 @@ BG = '#050810'                 # window colour that gets keyed out as transparen
 PIVOT = (252, 48)              # web grip near the top-right corner
 SPR_W, SPR_H = 240, 232        # sprite canvas (px)
 SPR_PIV = (120, 10)            # pivot inside the sprite canvas
-S = 1.5                        # final px per sprite unit
-
-# --------------------------------------------------------------------------- palette
-INK = (10, 12, 20, 255)
-WHITE = (255, 250, 235, 255)
-RED, RED_HI, RED_SH = (226, 32, 44, 255), (255, 104, 114, 255), (150, 14, 28, 255)
-BLUE, BLUE_HI, BLUE_SH = (30, 84, 196, 255), (88, 152, 248, 255), (14, 44, 120, 255)
-SHADE = {RED: (RED_HI, RED_SH), BLUE: (BLUE_HI, BLUE_SH)}
-
+S = 1.5                        # px per "unit" used by Scene.xf()
 
 # --------------------------------------------------------------------------- helpers
 def blit(dst, src, x, y):
@@ -121,83 +113,134 @@ def make_web():
 
 
 # --------------------------------------------------------------------------- the hero
-@lru_cache(maxsize=128)
-def make_spidey(idx=0, blink=0, waving=False, squint=False):
-    """Crisp pixel sprite: compact upside-down Spidey with ankles at the web."""
-    cell = 4
-    sprite = Image.new('RGBA', (SPR_W, SPR_H), (0, 0, 0, 0))
-    pix = Image.new('RGBA', (20, 36), (0, 0, 0, 0))
-    d = ImageDraw.Draw(pix)
-    ink = (9, 11, 19, 255)
-    red = (226, 24, 39, 255)
-    red_hi = (255, 83, 94, 255)
-    red_sh = (145, 10, 25, 255)
-    blue = (21, 75, 190, 255)
-    blue_hi = (68, 143, 248, 255)
-    white = (255, 250, 238, 255)
-    sway = int(math.sin(idx / 48 * math.tau))
+# Hand-drawn pixel art: each string is the LEFT half of a row (12 px); the right half is mirrored.
+#   K ink   R red   H red light   S red shade   B blue   L blue light   D blue dark   W cream (web / eyes)
+CELL = 6
+GRID_W = 24
+HEAD_PX = 171            # head centre, px below the pivot (for the tingle effect)
+CHEST_PX = 105           # chest centre, px below the pivot (for impact effects)
+TINGLE_R = 74            # spidey-sense ring radius around the head
 
-    def limb(points, color, inner, outer=4, width=2):
-        d.line(points, fill=ink, width=outer, joint='curve')
-        for x, y in points:
-            d.rectangle((x-outer//2, y-outer//2, x+outer//2, y+outer//2), fill=ink)
-        d.line(points, fill=color, width=width, joint='curve')
-        for x, y in points:
-            d.rectangle((x-width//2, y-width//2, x+width//2, y+width//2), fill=color)
-        d.line([(x-1, y) for x, y in points], fill=inner, width=1, joint='curve')
+PAL = {'K': (9, 11, 19, 255), 'R': (226, 30, 42, 255), 'H': (255, 100, 110, 255), 'S': (150, 12, 28, 255),
+       'B': (30, 84, 200, 255), 'L': (96, 160, 252, 255), 'D': (14, 44, 124, 255),
+       'W': (255, 250, 238, 255)}
 
-    # Web tie and two sharply bent legs gathered above the body.
-    d.line((10, 0, 10, 3), fill=white, width=1)
-    d.rectangle((8, 2, 11, 4), fill=ink)
-    d.rectangle((9, 2, 10, 3), fill=white)
-    limb([(8, 4), (5, 7), (4, 10), (7, 13)], blue, blue_hi)
-    limb([(11, 4), (14, 7), (15, 10), (12, 13)], blue, blue_hi)
-    # Red boots point into the web, blue knee panels remain visible.
-    d.polygon([(6,4),(8,3),(9,5),(8,8),(6,8),(5,6)], fill=ink)
-    d.polygon([(7,4),(8,4),(8,7),(6,7),(6,6)], fill=red)
-    d.polygon([(11,3),(13,4),(14,6),(13,8),(11,8),(10,5)], fill=ink)
-    d.polygon([(12,4),(13,4),(13,7),(11,7),(11,5)], fill=red)
-    d.line((6,9,7,10), fill=blue_hi, width=1)
-    d.line((12,10,13,9), fill=blue_hi, width=1)
+# web line + red cone of legs (toes together at the web)
+LEGS = {
+    0: "...........W", 1: "...........W", 2: "...........W",
+    3: "........KKKW", 4: ".......KRRKW", 5: "......KRHRKW", 6: "......KRRRKW",
+    7: ".....KRHRRKW", 8: ".....KRRKRKW", 9: "....KRHRRRKW", 10: "....KRRKRRKW",
+    11: "...KRHRRKRKW",
+}
+# blue arms bent out to the sides (drawn over the legs)
+WING = {
+    6: "..KKKKK.....", 7: ".KBBBK......", 8: "KBLLBK......",
+    9: "KBLBK.......", 10: "KDBBK.......", 11: "KDBK........",
+}
+# torso with black spider emblem, then waist band
+BODY = {
+    12: "..KKRRRRRRKK", 13: ".KRRHRRRRRRR", 14: ".KRRRRRRKRRR", 15: ".KBLRRRRRKRK",
+    16: ".KBBRRRRRRKK", 17: ".KDBRRKKKKRK", 18: ".KRRRRRRRRKK", 19: ".KRRRRRRRKRK",
+    20: "..KRRRRRKRRK", 21: "...KRRRRRRRR", 22: "....KKKKKKKK",
+}
+# big chibi head (eyes on rows 26-28)
+HEAD = {
+    23: "..KRRHRRRRRK", 24: ".KRRRRRRRRRK", 25: ".KRRKKKKKKKK", 26: ".KRKWWWWWWKK",
+    27: ".KKWWWWWWKRK", 28: ".KKWWWWWKRRK", 29: ".KRKKKKKKRRK", 30: ".KRRRHRRRRRK",
+    31: "..KRRKRRKRRK", 32: "...KRRRRRRRK", 33: "....KKKKKKKK",
+}
+# raised right arm used when waving (5 px wide, columns 18..22 (+-1 sway))
+WAVE = {
+    1: ".KKK.", 2: "KBLBK", 3: "KBLBK", 4: "KBBBK", 5: ".KBK.", 6: "KBLBK",
+    7: "KBLBK", 8: "KBBBK", 9: "KBLBK", 10: "KBBBK", 11: "KDBBK",
+}
+ROWS = 34
 
-    # Compact torso: red chest, blue waist, unmistakable black spider emblem.
-    d.polygon([(7,12),(9,11),(11,11),(13,12),(14,18),(12,22),(8,22),(6,18)], fill=ink)
-    d.polygon([(8,12),(9,12),(10,13),(11,12),(12,12),(13,13),(13,18),(11,20),(9,20),(7,18)], fill=red)
-    d.polygon([(8,19),(12,19),(13,21),(12,24),(8,24),(7,21)], fill=ink)
-    d.polygon([(9,20),(11,20),(12,21),(11,23),(9,23),(8,21)], fill=blue)
-    d.line((10,14,10,18), fill=ink, width=1)
-    d.line((10,15,8,14), fill=ink, width=1); d.line((10,15,12,14), fill=ink, width=1)
-    d.line((10,16,8,17), fill=ink, width=1); d.line((10,16,12,17), fill=ink, width=1)
-    d.point((8,13), fill=red_hi); d.point((12,13), fill=red_hi)
 
-    # Arms bend outward, then tuck beside the hanging mask like the reference pose.
-    limb([(7,16),(4,18),(4,21),(6,23)], red, red_hi)
+def _mirror(half):
+    return half + half[::-1]
+
+
+def _build(sway, blink, waving, squint):
+    grid = [['.'] * GRID_W for _ in range(ROWS)]
+
+    def put(rows, mirror=True, x0=0):
+        for y, half in rows.items():
+            row = _mirror(half) if mirror else half
+            for i, ch in enumerate(row):
+                if ch != '.':
+                    grid[y][x0 + i] = ch
+
+    put(LEGS)
+    put(BODY)
+    put(HEAD)
+    # left arm always; right arm either mirrored wing or the waving arm
+    for y, half in WING.items():
+        for i, ch in enumerate(half):
+            if ch != '.':
+                grid[y][i] = ch
+                if not waving:
+                    grid[y][GRID_W - 1 - i] = ch
     if waving:
-        limb([(13,16),(16,18),(16,20),(17+sway,18)], red, red_hi)
-    else:
-        limb([(13,16),(16,18),(16,21),(14,23)], red, red_hi)
-    d.rectangle((5,22,7,24), fill=ink); d.rectangle((5,22,6,23), fill=red)
-    d.rectangle((13,22,15,24), fill=ink); d.rectangle((14,22,14,23), fill=red)
+        for y, row in WAVE.items():
+            shift = max(-1, min(1, sway // 2)) if y <= 5 else 0
+            for i, ch in enumerate(row):
+                if ch != '.':
+                    grid[y][18 + i + shift] = ch
 
-    # Big hanging mask, bold eye lenses, and a simple visible web pattern.
-    d.ellipse((5,22,14,34), fill=ink)
-    d.ellipse((6,23,13,33), fill=red)
-    d.line((9,24,10,28,9,32), fill=red_sh, width=1)
-    d.line((7,27,10,28,13,27), fill=red_sh, width=1)
-    d.line((7,30,10,28,13,30), fill=red_sh, width=1)
-    if blink:
-        d.line((6,28,9,29), fill=ink, width=2)
-        d.line((11,29,14,28), fill=ink, width=2)
-    else:
-        d.polygon([(6,26),(8,25),(10,27),(9,29),(7,29)], fill=ink)
-        d.polygon([(14,26),(12,25),(10,27),(11,29),(13,29)], fill=ink)
-        d.polygon([(7,26),(8,26),(9,27),(8,28)], fill=white)
-        d.polygon([(13,26),(12,26),(11,27),(12,28)], fill=white)
-    d.point((7,24), fill=red_hi); d.point((12,24), fill=red_hi)
+    # blink / squint on the eye rows (white lens cells)
+    for y in (26, 27, 28):
+        for x in range(GRID_W):
+            if grid[y][x] == 'W':
+                if blink:
+                    grid[y][x] = 'K' if y == 27 else 'R'
+                elif squint and y == 26:
+                    grid[y][x] = 'K'
 
-    scaled = pix.resize((20*cell, 36*cell), Image.Resampling.NEAREST)
-    sprite.alpha_composite(scaled, (SPR_PIV[0]-10*cell, SPR_PIV[1]))
+    # bevel: light on top/left silhouette edges, shade on bottom/right (outline pixels only)
+    def empty(x, y):
+        return not (0 <= x < GRID_W and 0 <= y < ROWS) or grid[y][x] == '.'
+
+    outline = {(x, y) for y in range(ROWS) for x in range(GRID_W) if grid[y][x] == 'K'
+               and any(empty(x + dx, y + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
+    base = [row[:] for row in grid]
+    for y in range(ROWS):
+        for x in range(GRID_W):
+            ch = base[y][x]
+            if ch in 'RHSBLD':
+                fam = 'R' if ch in 'RHS' else 'B'
+                lit = (x - 1, y) in outline or (x, y - 1) in outline
+                dim = (x + 1, y) in outline or (x, y + 1) in outline
+                if dim:
+                    grid[y][x] = 'S' if fam == 'R' else 'D'
+                elif lit:
+                    grid[y][x] = 'H' if fam == 'R' else 'L'
+                elif ch in 'HS':
+                    grid[y][x] = 'R'
+
+    img = Image.new('RGBA', (GRID_W, ROWS), (0, 0, 0, 0))
+    for y, row in enumerate(grid):
+        for x, ch in enumerate(row):
+            if ch != '.':
+                img.putpixel((x, y), PAL[ch])
+    return img
+
+
+@lru_cache(maxsize=64)
+def _cached(sway, blink, waving, squint):
+    pix = _build(sway, blink, waving, squint)
+    sprite = Image.new('RGBA', (SPR_W, SPR_H), (0, 0, 0, 0))
+    scaled = pix.resize((pix.width * CELL, pix.height * CELL), Image.Resampling.NEAREST)
+    sprite.alpha_composite(scaled, (SPR_PIV[0] - GRID_W // 2 * CELL, SPR_PIV[1]))
     return sprite
+
+
+def make_spidey(idx=0, blink=0, waving=False, squint=False):
+    """Chunky hand-drawn pixel-art Spidey hanging upside down by his web."""
+    sway = int(round(2 * math.sin(idx / 48 * math.tau * 3))) if waving else 0
+    return _cached(sway, 1 if blink else 0, bool(waving), bool(squint))
+
+
 
 # --------------------------------------------------------------------------- the scene (pure PIL)
 class Scene:
@@ -216,11 +259,11 @@ class Scene:
         self.particles = []
         self.shot = None
         self.shake = 0.0
-        self.center = (PIVOT[0], PIVOT[1] + 75 * S)
+        self.center = (PIVOT[0], PIVOT[1] + CHEST_PX)
 
     # -- coordinates
     def xf(self, ux, uy):
-        """Sprite unit -> window pixel (follows the swing)."""
+        """Sprite unit (1 unit = S px) -> window pixel (follows the swing)."""
         dx, dy = ux * S, uy * S
         c, s = math.cos(self.ang), math.sin(self.ang)
         return (PIVOT[0] + dx * c + dy * s, PIVOT[1] - dx * s + dy * c)
@@ -248,7 +291,8 @@ class Scene:
                                    math.cos(a) * sp, math.sin(a) * sp - 1, life, life,
                                    random.choice(((255, 224, 90), (255, 84, 98), (96, 190, 255), (255, 255, 255))),
                                    random.uniform(2, 4.5)])
-        self.shot = {'age': 0, 'a': self.xf(-22, 114),
+        # web-shot leaves the left glove side of the hero and splats somewhere on screen
+        self.shot = {'age': 0, 'a': self.xf(-52, HEAD_PX / S - 4),
                      'b': (random.uniform(25, 150), random.uniform(110, 265))}
 
     # -- per-frame update
@@ -258,7 +302,7 @@ class Scene:
         if not (k is not None and k < 5):                       # hit-stop freezes the swing
             self.vel += -.0105 * self.ang + .0004 * math.sin(self.tick * .045)
             self.vel *= .992
-            self.ang = max(-.4, min(.4, self.ang + self.vel))
+            self.ang = max(-.36, min(.36, self.ang + self.vel))
         # blink / timers
         if self.blink_seq:
             self.blink_frame = self.blink_seq.pop(0)
@@ -274,7 +318,7 @@ class Scene:
         rot = spr.rotate(math.degrees(self.ang), resample=Image.Resampling.NEAREST, center=SPR_PIV)
         layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         blit(layer, rot, PIVOT[0] - SPR_PIV[0], PIVOT[1] - SPR_PIV[1])
-        self.center = self.xf(0, 75)
+        self.center = self.xf(0, CHEST_PX / S)
 
         if k is not None and k <= 2:
             out = self._flat_frame(k, layer)
@@ -408,11 +452,11 @@ class Scene:
         if self.tingle <= 0:
             return
         self.tingle -= 1
-        hx, hy = self.xf(0, 101.5)
+        hx, hy = self.xf(0, HEAD_PX / S)
         al = int(255 * min(1, self.tingle / 6))
         for i in range(8):
             a = i * math.pi / 4 + .39
-            r0 = 27 + 3 * math.sin(self.tick * .9 + i)
+            r0 = TINGLE_R + 3 * math.sin(self.tick * .9 + i)
             ca, sa = math.cos(a), math.sin(a)
             px, py = -sa, ca
             pts = [(hx + ca * r0, hy + sa * r0),
@@ -487,7 +531,7 @@ class DeskSpidey(tk.Tk):
             text = self.message[:58]
             lines = max(1, math.ceil(len(text) / 23))
             bh = 14 + 12 * lines
-            x2, hy = PIVOT[0] - 36, PIVOT[1] + 150
+            x2, hy = PIVOT[0] - 86, PIVOT[1] + 175
             x1, y1 = x2 - 152, hy - 62
             self.rrect(x1, y1, x2, y1 + bh, 10, fill='#fff8e8', outline='#131722', width=2, tags='hud')
             c.create_polygon(x2 - 2, y1 + bh - 18, x2 + 22, hy - 14, x2 - 2, y1 + bh - 4,
