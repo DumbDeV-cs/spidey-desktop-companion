@@ -1,18 +1,22 @@
-"""Desk Spidey v12: polished vector comic hero in an upside-down web-grab pose.
+"""Desk Companion v13: Spidey + a pixel-art black cat you can switch between.
 
 Requires: pip install pillow
-Controls: click = swing, double-click = THWIP (impact frames!), right-click = menu, drag = move.
+Controls: click = swing / pet, double-click = THWIP / MEOW (impact!), right-click = menu, drag = move.
+Pick a companion: right-click -> "Choose companion"  (your choice is remembered).
+Start straight as the cat:  python spidey_companion.py cat
 
-What's new in v11
-  * Smooth, high-resolution comic art with a bold ink outline, red-and-blue suit, mask webbing,
-    white lenses, and chest emblem
-  * Hands clasp the web overhead, knees fold outward, and the mask hangs below the torso
-  * Hanging pose stays clear through the existing pendulum swing and impact effects
-  * Everything else kept: orb web, impact frames, THWIP, particles, pendulum swing
+What's new in v13
+  * NEW: Pixel-art cat (Midnight black or Ginger) sitting on a wooden ledge under a twinkling night sky
+  * Cat animations: breathing, blinking, ear flicks, swishing tail, eyes that follow your mouse,
+    purr-bobbing with floating hearts when petted, yawns, sleeping with floating Zzz after a while,
+    a "!" when its senses tingle, and a MEOW! hop with a comic starburst on double-click
+  * Companion choice is saved next to the script (companion.txt)
+  * Everything from Spidey v12 is kept untouched
 """
 import math
 import os
 import random
+import sys
 import tkinter as tk
 from functools import lru_cache
 
@@ -25,6 +29,9 @@ PIVOT = (236, 48)              # web grip near the top-right corner
 SPR_W, SPR_H = 210, 280        # transparent hero canvas (px)
 SPR_PIV = (105, 0)             # sprite attaches directly at the hanging strand
 S = 1.5                        # px per "unit" used by Scene.xf()
+HERE = os.path.dirname(os.path.abspath(__file__))
+SAVE_PATH = os.path.join(HERE, 'companion.txt')
+
 
 # --------------------------------------------------------------------------- helpers
 def blit(dst, src, x, y):
@@ -75,14 +82,12 @@ def make_web():
     A = (W - 3, 3)
     n_rad = 9
     angs = [math.radians(88 + i * (94 / (n_rad - 1)) + rng.uniform(-1.5, 1.5)) for i in range(n_rad)]
-    # Keep the orb web as a compact corner flourish; the hero stays the focus.
     length = 132
     rings = [16, 27, 39, 52, 66, 81, 98, 118]
 
     def pt(r, a):
         return (A[0] + math.cos(a) * r, A[1] + math.sin(a) * r)
 
-    # ring threads (sagging toward the anchor) first, so radials sit on top
     nodes = []
     for ri, r in enumerate(rings):
         for i in range(n_rad - 1):
@@ -95,16 +100,13 @@ def make_web():
             d.line(pts, fill=(176, 202, 232, 92), width=SS, joint='curve')
         for a in angs[1:-1]:
             nodes.append(pt(r, a))
-    # radial strands
     for a in angs:
         p = pt(length, a)
         d.line((A[0] * SS, A[1] * SS, p[0] * SS, p[1] * SS), fill=(214, 228, 248, 130), width=SS)
-    # dragline Spidey hangs from (soft glow + bright core)
     ctrl = ((A[0] + PIVOT[0]) / 2 + 4, (A[1] + PIVOT[1]) / 2 + 12)
     drag = [(x * SS, y * SS) for x, y in bezier(A, ctrl, PIVOT, 20)]
     d.line(drag, fill=(150, 195, 255, 48), width=6 * SS, joint='curve')
     d.line(drag, fill=(244, 249, 255, 240), width=2 * SS, joint='curve')
-    # glowing anchor knot
     for r, a in ((9, 40), (6, 90), (3, 220)):
         d.ellipse(((A[0] - r) * SS, (A[1] - r) * SS, (A[0] + r) * SS, (A[1] + r) * SS),
                   fill=(210, 232, 255, a))
@@ -117,23 +119,42 @@ def make_web():
 HEAD_PX = 246
 CHEST_PX = 170
 TINGLE_R = 62
-HERO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spidey_reference_cutout.png')
-with Image.open(HERO_PATH) as _hero_file:
-    _hero_art = _hero_file.convert('RGBA')
-_HERO_BASE = Image.new('RGBA', (SPR_W, SPR_H), (0, 0, 0, 0))
-_hero_h = SPR_H
-_hero_w = round(_hero_art.width * _hero_h / _hero_art.height)
-_HERO_BASE.alpha_composite(_hero_art.resize((_hero_w, _hero_h), Image.Resampling.LANCZOS),
-                           ((SPR_W - _hero_w) // 2, 0))
+HERO_PATH = os.path.join(HERE, 'spidey_reference_cutout.png')
+
+
+def _load_hero():
+    """Load the comic illustration; fall back to a simple drawn hero if the PNG is missing."""
+    base = Image.new('RGBA', (SPR_W, SPR_H), (0, 0, 0, 0))
+    try:
+        with Image.open(HERO_PATH) as f:
+            art = f.convert('RGBA')
+        w = round(art.width * SPR_H / art.height)
+        base.alpha_composite(art.resize((w, SPR_H), Image.Resampling.LANCZOS), ((SPR_W - w) // 2, 0))
+    except (OSError, FileNotFoundError):
+        d = ImageDraw.Draw(base)
+        d.line((105, 0, 105, 60), fill=(240, 246, 255, 255), width=3)
+        d.ellipse((70, 150, 140, 270), fill=(40, 70, 180, 255), outline=(10, 12, 20, 255), width=3)
+        d.ellipse((62, 58, 148, 170), fill=(214, 28, 44, 255), outline=(10, 12, 20, 255), width=3)
+        d.polygon([(76, 126), (96, 118), (98, 134), (84, 138)], fill=(255, 255, 255, 255))
+        d.polygon([(134, 126), (114, 118), (112, 134), (126, 138)], fill=(255, 255, 255, 255))
+    return base
+
+
+_HERO_BASE = _load_hero()
+
 
 @lru_cache(maxsize=64)
 def make_spidey(idx=0, blink=0, waving=False, squint=False):
     """Load the polished, transparent comic illustration used by the pet."""
     return _HERO_BASE.copy()
 
-# --------------------------------------------------------------------------- the scene (pure PIL)
+
+# --------------------------------------------------------------------------- Spidey scene (pure PIL)
 class Scene:
     """All the animation + impact-frame logic; step() returns one RGBA frame."""
+    flat_frames = True                      # hard black/white impact frames hide the HUD
+    text_pos = None                         # use default THWIP! position
+    bubble = (PIVOT[0] - 86, PIVOT[1] + 175)  # speech bubble anchor
 
     def __init__(self):
         self.web, self.nodes = make_web()
@@ -150,14 +171,12 @@ class Scene:
         self.shake = 0.0
         self.center = (PIVOT[0], PIVOT[1] + CHEST_PX)
 
-    # -- coordinates
     def xf(self, ux, uy):
         """Sprite unit (1 unit = S px) -> window pixel (follows the swing)."""
         dx, dy = ux * S, uy * S
         c, s = math.cos(self.ang), math.sin(self.ang)
         return (PIVOT[0] + dx * c + dy * s, PIVOT[1] - dx * s + dy * c)
 
-    # -- events
     def poke(self, amount):
         self.vel += amount
         self.squint = max(self.squint, 8)
@@ -180,11 +199,9 @@ class Scene:
                                    math.cos(a) * sp, math.sin(a) * sp - 1, life, life,
                                    random.choice(((255, 224, 90), (255, 84, 98), (96, 190, 255), (255, 255, 255))),
                                    random.uniform(2, 4.5)])
-        # web-shot leaves the left glove side of the hero and splats somewhere on screen
         self.shot = {'age': 0, 'a': self.xf(-52, HEAD_PX / S - 4),
                      'b': (random.uniform(25, 150), random.uniform(110, 265))}
 
-    # -- per-frame update
     def step(self):
         self.tick += 1
         k = self.imp
@@ -192,7 +209,6 @@ class Scene:
             self.vel += -.0105 * self.ang + .0004 * math.sin(self.tick * .045)
             self.vel *= .992
             self.ang = max(-.24, min(.24, self.ang + self.vel))
-        # blink / timers
         if self.blink_seq:
             self.blink_frame = self.blink_seq.pop(0)
         else:
@@ -233,7 +249,6 @@ class Scene:
             self.imp = k + 1 if k < 11 else None
         return out
 
-    # -- layers
     def _flat_frame(self, k, layer):
         """Hard black/white anime impact frames with speed lines; last one is inverted."""
         c = self.center
@@ -267,7 +282,6 @@ class Scene:
         d.polygon(outer, fill=(255, 214, 64, a))
         d.line(outer + [outer[0]], fill=(10, 12, 20, a), width=3, joint='curve')
         d.polygon(inner, fill=(232, 28, 42, a))
-        # halftone dots on the red core
         for gx in range(-90, 91, 9):
             for gy in range(-90, 91, 9):
                 dist = math.hypot(gx, gy)
@@ -355,11 +369,365 @@ class Scene:
             d.line(pts, fill=(255, 255, 255, al), width=2)
 
 
+# --------------------------------------------------------------------------- the pixel cat
+PX = 5                           # screen pixels per cat-art pixel
+LW, LH = W // PX, H // PX        # 76 x 68 low-res canvas the cat world is drawn on
+CAT_O = (30, 12)                 # where the cat's own pixel grid starts on that canvas
+LEDGE_Y = CAT_O[1] + 44          # top row of the wooden ledge
+
+PALETTES = {
+    'Midnight': dict(body=(11, 11, 16), rim=(32, 36, 62), line=(26, 26, 40), paw=(44, 44, 62),
+                     stripe=(24, 24, 36), chest=(19, 19, 29), lid=(58, 58, 82), eye=(255, 210, 60),
+                     pupil=(8, 8, 12), ear=(236, 132, 146), whisker=(150, 156, 186)),
+    'Ginger': dict(body=(222, 128, 48), rim=(248, 180, 104), line=(184, 96, 32), paw=(250, 228, 192),
+                   stripe=(172, 84, 24), chest=(250, 228, 192), lid=(118, 56, 18), eye=(112, 216, 124),
+                   pupil=(18, 40, 20), ear=(250, 170, 170), whisker=(255, 246, 228)),
+}
+HEART = (".#.#.", "#####", "#####", ".###.", "..#..")
+ZEE = ("###", "..#", ".#.", "#..", "###")
+PLUS = (".#.", "###", ".#.")
+
+
+class CatScene:
+    """Pixel-art cat on a ledge. Same interface as Scene so the app can swap them."""
+    flat_frames = False
+    text_pos = (112, 56)                       # where MEOW! lettering goes
+    bubble = (218, 140)                        # speech bubble anchor
+    HOP = (0, 2, 4, 6, 7, 6, 5, 3, 2, 1, 0, 0)
+
+    def __init__(self, coat='Midnight'):
+        self.pal = PALETTES[coat]
+        rng = random.Random(7)
+        self.stars = []
+        while len(self.stars) < 16:
+            x, y = rng.randint(1, LW - 2), rng.randint(1, 36)
+            if (x < 33 and y < 10) or (38 <= x <= 68 and y >= 10) or (x >= 58 and y < 17):
+                continue
+            self.stars.append((x, y, rng.uniform(0, math.tau)))
+        self.tick = 0
+        self.imp, self.imp_seed, self.sfx = None, 1, 'MEOW!'
+        self.shake, self.tingle = 0.0, 0
+        self.blink_seq, self.blink_cd, self.blink_frame = [], 40, 0
+        self.purr = self.chat = self.idle = self.yawn = self.twitch = 0
+        self.twitch_cd, self.yawn_cd = 90, 500
+        self.sleeping = False
+        self.look = 0
+        self.parts = []
+        self.center = ((CAT_O[0] + 21) * PX, (CAT_O[1] + 28) * PX)
+
+    # -- events (same names the app already calls)
+    def wake(self):
+        self.idle = 0
+        self.sleeping = False
+
+    def poke(self, amount=0):
+        self.wake()
+        self.purr = 80
+        for _ in range(3):
+            self._heart()
+
+    def wave(self, ticks=60):
+        self.chat = max(self.chat, ticks)
+
+    def thwip(self, text='MEOW!'):
+        self.wake()
+        self.imp, self.imp_seed, self.sfx = 0, random.randint(1, 10 ** 6), text
+        self.purr = 0
+
+    def on_hit(self):
+        self.shake = 6.0
+        cx, cy = CAT_O[0] + 21, CAT_O[1] + 24
+        cols = ((255, 224, 90), (255, 110, 150), (130, 210, 255), (255, 255, 255))
+        for _ in range(28):
+            a, sp = random.uniform(0, math.tau), random.uniform(.6, 1.9)
+            self._spawn('spark', cx, cy, math.cos(a) * sp, math.sin(a) * sp - .4,
+                        random.randint(12, 26), random.choice(cols))
+        for _ in range(4):
+            self._heart()
+
+    # -- particles
+    def _spawn(self, kind, x, y, vx, vy, life, col):
+        self.parts.append([x, y, vx, vy, life, life, kind, col])
+
+    def _heart(self):
+        hx, hy = CAT_O[0] + 21, CAT_O[1] - 3
+        self._spawn('heart', hx + random.uniform(-9, 9), hy, random.uniform(-.08, .08), -.18, 40,
+                    random.choice(((255, 92, 130), (255, 150, 180), (255, 70, 100))))
+
+    # -- per-frame update
+    def step(self):
+        self.tick += 1
+        t, k = self.tick, self.imp
+        self.idle += 1
+        if self.idle > 700 and k is None and not self.purr:
+            self.sleeping = True
+        # blink
+        if self.blink_seq:
+            self.blink_frame = self.blink_seq.pop(0)
+        else:
+            self.blink_frame = 0
+            self.blink_cd -= 1
+            if self.blink_cd <= 0:
+                self.blink_seq, self.blink_cd = [1, 2, 2, 1], random.randint(55, 150)
+        # ear twitch
+        self.twitch_cd -= 1
+        if self.twitch_cd <= 0 and not self.sleeping:
+            self.twitch, self.twitch_cd = 10, random.randint(70, 200)
+        # yawn
+        if not self.sleeping and not self.yawn:
+            self.yawn_cd -= 1
+            if self.yawn_cd <= 0:
+                self.yawn, self.yawn_cd = 28, random.randint(500, 1100)
+        for name in ('twitch', 'yawn', 'purr', 'chat', 'tingle'):
+            setattr(self, name, max(0, getattr(self, name) - 1))
+        # ambient particles
+        if self.purr and t % 14 == 0:
+            self._heart()
+        if self.sleeping and t % 38 == 0:
+            self._spawn('z', CAT_O[0] + 28, CAT_O[1] + 7, .1, -.14, 56, (190, 205, 255))
+
+        hop = self.HOP[k] if k is not None else 0
+        if k == 3:
+            self.on_hit()
+        self.center = ((CAT_O[0] + 21) * PX + PX // 2, (CAT_O[1] - hop + 28) * PX)
+
+        lay = Image.new('RGBA', (LW, LH), (0, 0, 0, 0))
+        d = ImageDraw.Draw(lay)
+        self._backdrop(d)
+        half = max(6, 13 - hop)                                    # shadow shrinks as the cat hops
+        sx = CAT_O[0] + 22
+        d.rectangle((sx - half, LEDGE_Y, sx + half, LEDGE_Y), fill=(60, 38, 24, 255))
+        if k is not None and k >= 3:
+            self._burst(d, k)
+        self._cat(d, hop)
+        self._parts(d)
+        if k is not None:
+            self.imp = k + 1 if k < 11 else None
+        return lay.resize((W, H), Image.Resampling.NEAREST)
+
+    # -- drawing helpers
+    @staticmethod
+    def _px(d, x, y, rows, col):
+        for j, row in enumerate(rows):
+            for i, ch in enumerate(row):
+                if ch == '#':
+                    d.point((x + i, y + j), fill=col)
+
+    def _backdrop(self, d):
+        t = self.tick
+        for x, y, ph in self.stars:
+            v = math.sin(t * .06 + ph)
+            if v > .55:
+                self._px(d, x - 1, y - 1, PLUS, (255, 255, 255, 235))
+            elif v > -.2:
+                d.point((x, y), fill=(190, 205, 255, 210))
+        # crescent moon
+        d.ellipse((62, 3, 72, 13), fill=(255, 238, 170, 255))
+        d.ellipse((65, 2, 75, 11), fill=(0, 0, 0, 0))
+        d.point((64, 9), fill=(232, 212, 140, 255))
+        d.point((66, 11), fill=(232, 212, 140, 255))
+        # wooden ledge
+        y0 = LEDGE_Y
+        d.rectangle((20, y0, LW - 1, y0), fill=(192, 130, 80, 255))
+        d.rectangle((20, y0 + 1, LW - 1, y0 + 3), fill=(142, 94, 56, 255))
+        d.rectangle((20, y0 + 4, LW - 1, y0 + 4), fill=(96, 62, 38, 255))
+        for gx in range(23, LW - 1, 7):
+            d.point((gx, y0 + 2), fill=(112, 72, 42, 255))
+            d.point((gx + 3, y0 + 1), fill=(166, 110, 66, 255))
+        # little potted plant that sways
+        d.rectangle((68, y0 - 5, 74, y0 - 5), fill=(190, 104, 66, 255))
+        d.rectangle((69, y0 - 4, 73, y0 - 1), fill=(156, 78, 50, 255))
+        sway = round(math.sin(t * .04))
+        g1, g2 = (86, 190, 110, 255), (130, 226, 140, 255)
+        d.line((71, y0 - 6, 71 + sway, y0 - 11), fill=g1)
+        d.line((71, y0 - 6, 68, y0 - 9 + sway), fill=g1)
+        d.line((71, y0 - 6, 74, y0 - 9 + sway), fill=g1)
+        d.point((71 + sway, y0 - 12), fill=g2)
+        d.point((68, y0 - 10 + sway), fill=g2)
+        d.point((74, y0 - 10 + sway), fill=g2)
+
+    def _burst(self, d, k):
+        t = k - 3
+        a = 255 if t < 3 else int(255 * max(0, 1 - (t - 3) / 4))
+        if a <= 0:
+            return
+        cx, cy = CAT_O[0] + 21, CAT_O[1] + 22
+        r0 = 8 + t * 3
+        rng = random.Random(self.imp_seed)
+        pts = []
+        for i in range(20):
+            ang = i * math.pi / 10
+            rr = r0 * (1 if i % 2 == 0 else .55) * rng.uniform(.9, 1.1)
+            pts.append((cx + math.cos(ang) * rr, cy + math.sin(ang) * rr))
+        d.polygon(pts, fill=(255, 214, 64, a))
+        inner = [(cx + (x - cx) * .62, cy + (y - cy) * .62) for x, y in pts]
+        d.polygon(inner, fill=(255, 110, 150, a))
+
+    def _parts(self, d):
+        keep = []
+        for p in self.parts:
+            x, y, vx, vy, life, mx, kind, col = p
+            x += vx
+            y += vy
+            if kind == 'spark':
+                vy += .06
+            life -= 1
+            if life > 0:
+                c = col + (int(255 * min(1, life / mx * 2.5)),)
+                if kind == 'heart':
+                    self._px(d, int(x + math.sin(life * .25) * 1.5), int(y), HEART, c)
+                elif kind == 'z':
+                    self._px(d, int(x + math.sin(life * .15) * 2), int(y), ZEE, c)
+                else:
+                    d.point((int(x), int(y)), fill=c)
+                keep.append([x, y, vx, vy, life, mx, kind, col])
+        self.parts = keep
+
+    def _cat(self, d, hop):
+        P, t = self.pal, self.tick
+        ox, oy = CAT_O[0], CAT_O[1] - hop
+
+        def R(x0, y0, x1, y1, c):
+            d.rectangle((ox + x0, oy + y0, ox + x1, oy + y1), fill=c + (255,))
+
+        def Q(x, y, c):
+            d.point((ox + x, oy + y), fill=c + (255,))
+
+        happy, sleepy = self.purr > 0, self.sleeping
+        closed = sleepy or self.blink_frame > 0 or self.yawn > 0
+        wide = self.imp is not None
+        rate = .5 if happy else (.045 if sleepy else .075)
+        hy = (1 if math.sin(t * rate) > .25 else 0) + (1 if sleepy else 0)   # breathing / purr bob
+
+        # tail (swishes, tip curls up)
+        speed = .34 if (happy or self.chat) else (.04 if sleepy else .12)
+        for i in range(13):
+            sway = math.sin(t * speed - i * .45) * i * .2
+            by = 40 - max(0, i - 9) + round(sway)
+            R(11 - i, by, 11 - i, by + 1, P['stripe'] if i % 4 == 3 else P['body'])
+
+        # body: wide at the bottom, haunch bulging right
+        for y in range(19, 44):
+            x0 = round(16 - (y - 19) * .26)
+            x1 = round(26 + (y - 19) * .36)
+            R(x0, y, x1, y, P['body'])
+            Q(x0, y, P['rim'])
+        R(19, 21, 23, 31, P['chest'])
+        R(17, 34, 17, 43, P['line'])
+        R(24, 34, 24, 43, P['line'])
+        for i in range(11):
+            Q(30 - i // 4, 32 + i, P['line'])
+        R(15, 42, 19, 43, P['paw'])
+        R(22, 42, 26, 43, P['paw'])
+        R(29, 43, 35, 43, P['paw'])
+
+        # head
+        R(14, 9 + hy, 28, 17 + hy, P['body'])
+        R(15, 8 + hy, 27, 18 + hy, P['body'])
+        R(13, 13 + hy, 13, 16 + hy, P['body'])
+        R(29, 13 + hy, 29, 16 + hy, P['body'])
+        R(16, 8 + hy, 26, 8 + hy, P['rim'])
+        # ears (flick on twitch, perk up on tingle)
+        perk = self.tingle > 0
+        eL = -1 if perk else (1 if self.twitch and (self.twitch // 2) % 2 == 0 else 0)
+        eR = -1 if perk else 0
+        R(14, 3 + eL, 15, 8 + hy, P['body'])
+        R(16, 5 + eL, 17, 8 + hy, P['body'])
+        Q(15, 5 + eL, P['ear'])
+        Q(15, 6 + eL, P['ear'])
+        Q(16, 7 + eL, P['ear'])
+        R(27, 3 + eR, 28, 8 + hy, P['body'])
+        R(25, 5 + eR, 26, 8 + hy, P['body'])
+        Q(27, 5 + eR, P['ear'])
+        Q(27, 6 + eR, P['ear'])
+        Q(26, 7 + eR, P['ear'])
+        # forehead stripes (nearly invisible on the black coat, bold on ginger)
+        R(19, 9 + hy, 19, 11 + hy, P['stripe'])
+        R(21, 9 + hy, 21, 12 + hy, P['stripe'])
+        R(23, 9 + hy, 23, 11 + hy, P['stripe'])
+        # eyes
+        for ex in (17, 23):
+            if closed:
+                R(ex, 13 + hy, ex + 2, 13 + hy, P['lid'])
+            elif happy:
+                Q(ex, 13 + hy, P['eye'])
+                Q(ex + 1, 12 + hy, P['eye'])
+                Q(ex + 2, 13 + hy, P['eye'])
+            else:
+                top = 11 if wide else 12
+                R(ex, top + hy, ex + 2, 13 + hy, P['eye'])
+                R(ex + 1 + self.look, top + hy, ex + 1 + self.look, 13 + hy, P['pupil'])
+        # nose + mouth
+        Q(21, 15 + hy, P['ear'])
+        if self.yawn > 0 and not sleepy:
+            R(20, 16 + hy, 22, 18 + hy, (122, 31, 51))
+            Q(21, 18 + hy, P['ear'])
+        else:
+            Q(20, 16 + hy, P['lid'])
+            Q(22, 16 + hy, P['lid'])
+        # whiskers (wiggle on twitch)
+        wv = 1 if (self.twitch and self.twitch % 4 < 2) else 0
+        R(9, 14 + hy - wv, 12, 14 + hy - wv, P['whisker'])
+        R(10, 17 + hy + wv, 12, 17 + hy + wv, P['whisker'])
+        R(30, 14 + hy - wv, 33, 14 + hy - wv, P['whisker'])
+        R(30, 17 + hy + wv, 32, 17 + hy + wv, P['whisker'])
+        # spidey-sense style "!" over the head
+        if perk:
+            R(21, -4, 21, -1, (255, 224, 74))
+            Q(21, 1, (255, 224, 74))
+
+
+# --------------------------------------------------------------------------- companions
+COMPANIONS = ('Spidey', 'Midnight Cat', 'Ginger Cat')
+
+
+def build_scene(name):
+    if name == 'Midnight Cat':
+        return CatScene('Midnight')
+    if name == 'Ginger Cat':
+        return CatScene('Ginger')
+    return Scene()
+
+
+VOICE = {
+    'spidey': dict(
+        greet='Hey! Your friendly neighborhood focus buddy is here.',
+        poke=['Wheee!', 'Web swing!', 'Nice and easy...'],
+        idle=['One tiny task at a time, hero.', 'Web-slinging focus mode: ready!',
+              'Stretch break? Even heroes need one.', 'Looking sharp, citizen!'],
+        thwip='THWIP! Spidey-sense activated!', sfx='THWIP!'),
+    'cat': dict(
+        greet='Mrrp! Soft paws, sharp focus. Let us begin.',
+        poke=['Purrrr...', 'Mrrow!', 'Pat pat pat~', 'Right behind the ears...'],
+        idle=['One tiny task at a time. Purr.', 'Hydrate, human. Then back to it.',
+              'I will guard your focus. Mew.', 'Stretch break? I did, twice.'],
+        thwip='MEOW! You called?', sfx='MEOW!'),
+}
+
+
+def load_choice():
+    for a in sys.argv[1:]:
+        if a.lower() in ('cat', '--cat'):
+            return 'Midnight Cat'
+        if a.lower() in ('ginger', '--ginger'):
+            return 'Ginger Cat'
+        if a.lower() in ('spidey', '--spidey'):
+            return 'Spidey'
+    try:
+        with open(SAVE_PATH) as f:
+            name = f.read().strip()
+        if name in COMPANIONS:
+            return name
+    except OSError:
+        pass
+    return 'Spidey'
+
+
 # --------------------------------------------------------------------------- the desktop pet
 class DeskSpidey(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Desk Spidey')
+        self.title('Desk Companion')
         self.overrideredirect(True)
         self.attributes('-topmost', True)
         try:
@@ -371,7 +739,6 @@ class DeskSpidey(tk.Tk):
         self.geometry(f'{W}x{H}+{self.pos[0]}+{self.pos[1]}')
         self.cv = tk.Canvas(self, width=W, height=H, bg=BG, bd=0, highlightthickness=0)
         self.cv.pack()
-        self.scene = Scene()
         self.photo = None
         self.message = ''
         self.message_until = 0
@@ -382,16 +749,36 @@ class DeskSpidey(tk.Tk):
         self.mood = 'Ready'
         self.missions = []
         self.drag = None
+        self.companion, self.kind, self.scene = 'Spidey', 'spidey', None
+        self.pick(load_choice(), greet=False)
         self.cv.bind('<ButtonPress-1>', self.start_drag)
         self.cv.bind('<B1-Motion>', self.move_window)
         self.cv.bind('<ButtonRelease-1>', self.release_click)
         self.cv.bind('<Double-Button-1>', lambda e: self.thwip())
         self.cv.bind('<Button-3>', self.menu)
         self.cv.bind('<Button-2>', self.menu)
-        self.say('Hey! Your friendly neighborhood focus buddy is here.', 6)
+        self.say(self.voice['greet'], 6)
         self.after(45000, self.auto_line)
         self.after(9000, self.auto_tingle)
         self.animate()
+
+    @property
+    def voice(self):
+        return VOICE[self.kind]
+
+    def pick(self, name, greet=True):
+        """Switch to another companion."""
+        self.companion = name
+        self.kind = 'cat' if 'Cat' in name else 'spidey'
+        self.scene = build_scene(name)
+        self.message, self.message_until = '', 0
+        if greet:
+            try:
+                with open(SAVE_PATH, 'w') as f:
+                    f.write(name)
+            except OSError:
+                pass
+            self.say(self.voice['greet'], 5)
 
     # ---- drawing
     def rrect(self, x1, y1, x2, y2, r=8, **kw):
@@ -403,7 +790,7 @@ class DeskSpidey(tk.Tk):
         c, s = self.cv, self.scene
         c.delete('hud')
         k = s.imp
-        if k is not None and k <= 2:           # pure impact frames: no UI on top
+        if k is not None and k <= 2 and s.flat_frames:   # pure impact frames: no UI on top
             return
         timer = f'{self.focus_left // 60:02d}:{self.focus_left % 60:02d}' if self.focus_left else '25:00'
         dot = '#42e08a' if self.focus_active else ('#ffcc4d' if self.focus_left else '#6d7f9c')
@@ -420,7 +807,7 @@ class DeskSpidey(tk.Tk):
             text = self.message[:58]
             lines = max(1, math.ceil(len(text) / 23))
             bh = 14 + 12 * lines
-            x2, hy = PIVOT[0] - 86, PIVOT[1] + 175
+            x2, hy = s.bubble
             x1, y1 = x2 - 152, hy - 62
             self.rrect(x1, y1, x2, y1 + bh, 10, fill='#fff8e8', outline='#131722', width=2, tags='hud')
             c.create_polygon(x2 - 2, y1 + bh - 18, x2 + 22, hy - 14, x2 - 2, y1 + bh - 4,
@@ -428,10 +815,10 @@ class DeskSpidey(tk.Tk):
             c.create_rectangle(x2 - 3, y1 + bh - 17, x2 - 1, y1 + bh - 5, fill='#fff8e8', outline='', tags='hud')
             c.create_text(x1 + 9, y1 + 7, anchor='nw', width=134, fill='#151923',
                           font=('Arial', 8, 'bold'), text=text, tags='hud')
-        if k is not None and 3 <= k <= 9:      # THWIP! comic lettering
+        if k is not None and 3 <= k <= 9:      # THWIP! / MEOW! comic lettering
             cx, cy = s.center
             size = 20 + min(k - 3, 3) * 4
-            tx, ty = max(90, cx - 95), max(30, cy - 78)
+            tx, ty = s.text_pos or (max(90, cx - 95), max(30, cy - 78))
             font = ('Arial Black', size, 'bold')
             for ox, oy in ((-2, -2), (2, -2), (-2, 2), (2, 2), (3, 3)):
                 c.create_text(tx + ox, ty + oy, text=s.sfx, font=font, fill='#10121b', angle=-9, tags='hud')
@@ -442,6 +829,9 @@ class DeskSpidey(tk.Tk):
 
     def animate(self):
         s = self.scene
+        if self.kind == 'cat':                             # eyes follow the mouse
+            px = self.winfo_pointerx() - (self.winfo_rootx() + (CAT_O[0] + 21) * PX)
+            s.look = -1 if px < -80 else (1 if px > 80 else 0)
         frame = s.step()
         self.photo = ImageTk.PhotoImage(frame)
         self.cv.delete('art')
@@ -470,7 +860,7 @@ class DeskSpidey(tk.Tk):
     def release_click(self, e):
         if self.drag and abs(e.x - self.drag[2]) < 5 and abs(e.y - self.drag[3]) < 5:
             self.scene.poke(random.choice((-.06, .06)))
-            self.say(random.choice(['Wheee!', 'Web swing!', 'Nice and easy...']))
+            self.say(random.choice(self.voice['poke']))
         self.drag = None
 
     # ---- behaviour
@@ -480,14 +870,17 @@ class DeskSpidey(tk.Tk):
         if wave:
             self.scene.wave(60)
 
-    def thwip(self, text='THWIP!', line='THWIP! Spidey-sense activated!'):
+    def thwip(self, text=None, line=None):
+        if self.kind == 'cat' and text in (None, 'THWIP!', 'POW!'):
+            text = 'MEOW!'
+        text = text or self.voice['sfx']
+        line = line or self.voice['thwip']
         self.scene.thwip(text)
         self.say(line)
 
     def auto_line(self):
         if random.random() < .45:
-            self.say(random.choice(['One tiny task at a time, hero.', 'Web-slinging focus mode: ready!',
-                                    'Stretch break? Even heroes need one.', 'Looking sharp, citizen!']), 5)
+            self.say(random.choice(self.voice['idle']), 5)
         self.after(45000, self.auto_line)
 
     def auto_tingle(self):
@@ -549,8 +942,20 @@ class DeskSpidey(tk.Tk):
 
     def menu(self, e):
         m = tk.Menu(self, tearoff=0)
-        m.add_command(label='\U0001F578  Swing!', command=lambda: self.scene.poke(random.choice((-.09, .09))))
-        m.add_command(label='\U0001F4A5  THWIP! (impact frames)', command=self.thwip)
+        who = tk.Menu(m, tearoff=0)
+        for name in COMPANIONS:
+            mark = '\u25CF  ' if name == self.companion else '      '
+            who.add_command(label=mark + name, command=lambda n=name: self.pick(n))
+        m.add_cascade(label='\U0001F43E  Choose companion', menu=who)
+        m.add_separator()
+        if self.kind == 'cat':
+            m.add_command(label='\U0001F431  Pet the cat',
+                          command=lambda: self.scene.poke(0))
+            m.add_command(label='\U0001F4A5  MEOW! (hop + starburst)', command=self.thwip)
+        else:
+            m.add_command(label='\U0001F578  Swing!',
+                          command=lambda: self.scene.poke(random.choice((-.09, .09))))
+            m.add_command(label='\U0001F4A5  THWIP! (impact frames)', command=self.thwip)
         m.add_command(label='\u23F1  Start / pause 25-minute focus', command=self.focus)
         m.add_command(label='\U0001F3AF  Add / view mission', command=self.show_missions)
         m.add_command(label='\u2705  Complete next mission', command=self.complete_mission)
@@ -559,11 +964,9 @@ class DeskSpidey(tk.Tk):
             moods.add_command(label=label, command=lambda v=label: self.set_mood(v))
         m.add_cascade(label='\U0001F60A  Log mood', menu=moods)
         m.add_separator()
-        m.add_command(label='Quit Desk Spidey', command=self.destroy)
+        m.add_command(label='Quit Desk Companion', command=self.destroy)
         m.tk_popup(e.x_root, e.y_root)
 
 
 if __name__ == '__main__':
     DeskSpidey().mainloop()
-
-
