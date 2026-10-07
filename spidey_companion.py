@@ -6,7 +6,7 @@ Pick a companion: right-click -> "Choose companion"  (your choice is remembered)
 Start straight as the cat:  python spidey_companion.py cat
 
 What's new in v13
-  * NEW: Pixel-art cat (Midnight black or Ginger) sitting on a wooden ledge under a twinkling night sky
+  * NEW: Tiny chibi pixel cat (Midnight black or Ginger) on a little ledge - its window is only 150x141 px
   * Cat animations: breathing, blinking, ear flicks, swishing tail, eyes that follow your mouse,
     purr-bobbing with floating hearts when petted, yawns, sleeping with floating Zzz after a while,
     a "!" when its senses tingle, and a MEOW! hop with a comic starburst on double-click
@@ -154,6 +154,9 @@ class Scene:
     """All the animation + impact-frame logic; step() returns one RGBA frame."""
     flat_frames = True                      # hard black/white impact frames hide the HUD
     text_pos = None                         # use default THWIP! position
+    compact = False
+    size = (W, H)
+    text_base = 20
     bubble = (PIVOT[0] - 86, PIVOT[1] + 175)  # speech bubble anchor
 
     def __init__(self):
@@ -370,38 +373,42 @@ class Scene:
 
 
 # --------------------------------------------------------------------------- the pixel cat
-PX = 5                           # screen pixels per cat-art pixel
-LW, LH = W // PX, H // PX        # 76 x 68 low-res canvas the cat world is drawn on
-CAT_O = (30, 12)                 # where the cat's own pixel grid starts on that canvas
-LEDGE_Y = CAT_O[1] + 44          # top row of the wooden ledge
+PX = 3                           # screen pixels per cat-art pixel (small = cute + tiny footprint)
+LW, LH = 50, 47                  # low-res canvas the little cat world is drawn on
+CW, CH = LW * PX, LH * PX        # compact window size: 150 x 141
+CAT_O = (14, 20)                 # where the cat's own pixel grid starts on that canvas
+LEDGE_Y = CAT_O[1] + 23          # top row of the little wooden ledge
 
 PALETTES = {
-    'Midnight': dict(body=(11, 11, 16), rim=(32, 36, 62), line=(26, 26, 40), paw=(44, 44, 62),
-                     stripe=(24, 24, 36), chest=(19, 19, 29), lid=(58, 58, 82), eye=(255, 210, 60),
-                     pupil=(8, 8, 12), ear=(236, 132, 146), whisker=(150, 156, 186)),
+    'Midnight': dict(body=(11, 11, 16), rim=(34, 38, 66), line=(26, 26, 40), paw=(52, 52, 74),
+                     stripe=(26, 26, 38), chest=(20, 20, 30), lid=(64, 64, 90), eye=(255, 210, 60),
+                     pupil=(8, 8, 12), ear=(236, 132, 146), whisker=(150, 156, 186), blush=(214, 104, 136)),
     'Ginger': dict(body=(222, 128, 48), rim=(248, 180, 104), line=(184, 96, 32), paw=(250, 228, 192),
                    stripe=(172, 84, 24), chest=(250, 228, 192), lid=(118, 56, 18), eye=(112, 216, 124),
-                   pupil=(18, 40, 20), ear=(250, 170, 170), whisker=(255, 246, 228)),
+                   pupil=(18, 40, 20), ear=(250, 170, 170), whisker=(255, 246, 228), blush=(244, 120, 120)),
 }
-HEART = (".#.#.", "#####", "#####", ".###.", "..#..")
+HEART = (".#.#.", "#####", ".###.", "..#..")
 ZEE = ("###", "..#", ".#.", "#..", "###")
 PLUS = (".#.", "###", ".#.")
 
 
 class CatScene:
-    """Pixel-art cat on a ledge. Same interface as Scene so the app can swap them."""
+    """Tiny chibi pixel cat on a ledge. Same interface as Scene so the app can swap them."""
     flat_frames = False
-    text_pos = (112, 56)                       # where MEOW! lettering goes
-    bubble = (218, 140)                        # speech bubble anchor
-    HOP = (0, 2, 4, 6, 7, 6, 5, 3, 2, 1, 0, 0)
+    compact = True                             # tells the app to use the small HUD
+    size = (CW, CH)                            # window size for this companion
+    text_pos = (CW // 2, 34)                   # where MEOW! lettering goes
+    text_base = 10
+    bubble = (0, 0)                            # unused (compact bubble is laid out by the app)
+    HOP = (0, 1, 2, 3, 3, 3, 2, 2, 1, 0, 0, 0)
 
     def __init__(self, coat='Midnight'):
         self.pal = PALETTES[coat]
         rng = random.Random(7)
         self.stars = []
-        while len(self.stars) < 16:
-            x, y = rng.randint(1, LW - 2), rng.randint(1, 36)
-            if (x < 33 and y < 10) or (38 <= x <= 68 and y >= 10) or (x >= 58 and y < 17):
+        while len(self.stars) < 9:
+            x, y = rng.randint(1, LW - 2), rng.randint(1, 17)
+            if x >= 38 and y < 12:
                 continue
             self.stars.append((x, y, rng.uniform(0, math.tau)))
         self.tick = 0
@@ -413,7 +420,7 @@ class CatScene:
         self.sleeping = False
         self.look = 0
         self.parts = []
-        self.center = ((CAT_O[0] + 21) * PX, (CAT_O[1] + 28) * PX)
+        self.center = ((CAT_O[0] + 10) * PX, (CAT_O[1] + 11) * PX)
 
     # -- events (same names the app already calls)
     def wake(self):
@@ -435,14 +442,14 @@ class CatScene:
         self.purr = 0
 
     def on_hit(self):
-        self.shake = 6.0
-        cx, cy = CAT_O[0] + 21, CAT_O[1] + 24
+        self.shake = 4.0
+        cx, cy = CAT_O[0] + 10, CAT_O[1] + 10
         cols = ((255, 224, 90), (255, 110, 150), (130, 210, 255), (255, 255, 255))
-        for _ in range(28):
-            a, sp = random.uniform(0, math.tau), random.uniform(.6, 1.9)
-            self._spawn('spark', cx, cy, math.cos(a) * sp, math.sin(a) * sp - .4,
-                        random.randint(12, 26), random.choice(cols))
-        for _ in range(4):
+        for _ in range(18):
+            a, sp = random.uniform(0, math.tau), random.uniform(.4, 1.2)
+            self._spawn('spark', cx, cy, math.cos(a) * sp, math.sin(a) * sp - .3,
+                        random.randint(10, 22), random.choice(cols))
+        for _ in range(3):
             self._heart()
 
     # -- particles
@@ -450,8 +457,8 @@ class CatScene:
         self.parts.append([x, y, vx, vy, life, life, kind, col])
 
     def _heart(self):
-        hx, hy = CAT_O[0] + 21, CAT_O[1] - 3
-        self._spawn('heart', hx + random.uniform(-9, 9), hy, random.uniform(-.08, .08), -.18, 40,
+        hx, hy = CAT_O[0] + 10, CAT_O[1] - 2
+        self._spawn('heart', hx + random.uniform(-6, 6), hy, random.uniform(-.06, .06), -.14, 40,
                     random.choice(((255, 92, 130), (255, 150, 180), (255, 70, 100))))
 
     # -- per-frame update
@@ -461,7 +468,6 @@ class CatScene:
         self.idle += 1
         if self.idle > 700 and k is None and not self.purr:
             self.sleeping = True
-        # blink
         if self.blink_seq:
             self.blink_frame = self.blink_seq.pop(0)
         else:
@@ -469,33 +475,30 @@ class CatScene:
             self.blink_cd -= 1
             if self.blink_cd <= 0:
                 self.blink_seq, self.blink_cd = [1, 2, 2, 1], random.randint(55, 150)
-        # ear twitch
         self.twitch_cd -= 1
         if self.twitch_cd <= 0 and not self.sleeping:
             self.twitch, self.twitch_cd = 10, random.randint(70, 200)
-        # yawn
         if not self.sleeping and not self.yawn:
             self.yawn_cd -= 1
             if self.yawn_cd <= 0:
                 self.yawn, self.yawn_cd = 28, random.randint(500, 1100)
         for name in ('twitch', 'yawn', 'purr', 'chat', 'tingle'):
             setattr(self, name, max(0, getattr(self, name) - 1))
-        # ambient particles
         if self.purr and t % 14 == 0:
             self._heart()
         if self.sleeping and t % 38 == 0:
-            self._spawn('z', CAT_O[0] + 28, CAT_O[1] + 7, .1, -.14, 56, (190, 205, 255))
+            self._spawn('z', CAT_O[0] + 16, CAT_O[1] - 1, .08, -.1, 56, (190, 205, 255))
 
         hop = self.HOP[k] if k is not None else 0
         if k == 3:
             self.on_hit()
-        self.center = ((CAT_O[0] + 21) * PX + PX // 2, (CAT_O[1] - hop + 28) * PX)
+        self.center = ((CAT_O[0] + 10) * PX + PX // 2, (CAT_O[1] - hop + 11) * PX)
 
         lay = Image.new('RGBA', (LW, LH), (0, 0, 0, 0))
         d = ImageDraw.Draw(lay)
         self._backdrop(d)
-        half = max(6, 13 - hop)                                    # shadow shrinks as the cat hops
-        sx = CAT_O[0] + 22
+        half = max(4, 8 - hop)                                     # shadow shrinks as the cat hops
+        sx = CAT_O[0] + 10
         d.rectangle((sx - half, LEDGE_Y, sx + half, LEDGE_Y), fill=(60, 38, 24, 255))
         if k is not None and k >= 3:
             self._burst(d, k)
@@ -503,7 +506,7 @@ class CatScene:
         self._parts(d)
         if k is not None:
             self.imp = k + 1 if k < 11 else None
-        return lay.resize((W, H), Image.Resampling.NEAREST)
+        return lay.resize((CW, CH), Image.Resampling.NEAREST)
 
     # -- drawing helpers
     @staticmethod
@@ -521,38 +524,33 @@ class CatScene:
                 self._px(d, x - 1, y - 1, PLUS, (255, 255, 255, 235))
             elif v > -.2:
                 d.point((x, y), fill=(190, 205, 255, 210))
-        # crescent moon
-        d.ellipse((62, 3, 72, 13), fill=(255, 238, 170, 255))
-        d.ellipse((65, 2, 75, 11), fill=(0, 0, 0, 0))
-        d.point((64, 9), fill=(232, 212, 140, 255))
-        d.point((66, 11), fill=(232, 212, 140, 255))
-        # wooden ledge
+        # tiny crescent moon
+        d.ellipse((41, 3, 47, 9), fill=(255, 238, 170, 255))
+        d.ellipse((43, 2, 49, 8), fill=(0, 0, 0, 0))
+        # little wooden ledge
         y0 = LEDGE_Y
-        d.rectangle((20, y0, LW - 1, y0), fill=(192, 130, 80, 255))
-        d.rectangle((20, y0 + 1, LW - 1, y0 + 3), fill=(142, 94, 56, 255))
-        d.rectangle((20, y0 + 4, LW - 1, y0 + 4), fill=(96, 62, 38, 255))
-        for gx in range(23, LW - 1, 7):
-            d.point((gx, y0 + 2), fill=(112, 72, 42, 255))
-            d.point((gx + 3, y0 + 1), fill=(166, 110, 66, 255))
-        # little potted plant that sways
-        d.rectangle((68, y0 - 5, 74, y0 - 5), fill=(190, 104, 66, 255))
-        d.rectangle((69, y0 - 4, 73, y0 - 1), fill=(156, 78, 50, 255))
+        d.rectangle((4, y0, LW - 1, y0), fill=(192, 130, 80, 255))
+        d.rectangle((4, y0 + 1, LW - 1, y0 + 2), fill=(142, 94, 56, 255))
+        d.rectangle((4, y0 + 3, LW - 1, y0 + 3), fill=(96, 62, 38, 255))
+        for gx in range(7, LW - 1, 6):
+            d.point((gx, y0 + 1), fill=(112, 72, 42, 255))
+        # mini potted plant that sways
+        d.rectangle((40, y0 - 3, 44, y0 - 3), fill=(190, 104, 66, 255))
+        d.rectangle((41, y0 - 2, 43, y0 - 1), fill=(156, 78, 50, 255))
         sway = round(math.sin(t * .04))
         g1, g2 = (86, 190, 110, 255), (130, 226, 140, 255)
-        d.line((71, y0 - 6, 71 + sway, y0 - 11), fill=g1)
-        d.line((71, y0 - 6, 68, y0 - 9 + sway), fill=g1)
-        d.line((71, y0 - 6, 74, y0 - 9 + sway), fill=g1)
-        d.point((71 + sway, y0 - 12), fill=g2)
-        d.point((68, y0 - 10 + sway), fill=g2)
-        d.point((74, y0 - 10 + sway), fill=g2)
+        d.line((42, y0 - 4, 42 + sway, y0 - 7), fill=g1)
+        d.line((42, y0 - 4, 40, y0 - 6), fill=g1)
+        d.line((42, y0 - 4, 44, y0 - 6), fill=g1)
+        d.point((42 + sway, y0 - 8), fill=g2)
 
     def _burst(self, d, k):
         t = k - 3
         a = 255 if t < 3 else int(255 * max(0, 1 - (t - 3) / 4))
         if a <= 0:
             return
-        cx, cy = CAT_O[0] + 21, CAT_O[1] + 22
-        r0 = 8 + t * 3
+        cx, cy = CAT_O[0] + 10, CAT_O[1] + 10
+        r0 = 5 + t * 1.6
         rng = random.Random(self.imp_seed)
         pts = []
         for i in range(20):
@@ -570,12 +568,12 @@ class CatScene:
             x += vx
             y += vy
             if kind == 'spark':
-                vy += .06
+                vy += .04
             life -= 1
             if life > 0:
                 c = col + (int(255 * min(1, life / mx * 2.5)),)
                 if kind == 'heart':
-                    self._px(d, int(x + math.sin(life * .25) * 1.5), int(y), HEART, c)
+                    self._px(d, int(x + math.sin(life * .25) * 1.2), int(y), HEART, c)
                 elif kind == 'z':
                     self._px(d, int(x + math.sin(life * .15) * 2), int(y), ZEE, c)
                 else:
@@ -601,80 +599,72 @@ class CatScene:
 
         # tail (swishes, tip curls up)
         speed = .34 if (happy or self.chat) else (.04 if sleepy else .12)
-        for i in range(13):
-            sway = math.sin(t * speed - i * .45) * i * .2
-            by = 40 - max(0, i - 9) + round(sway)
-            R(11 - i, by, 11 - i, by + 1, P['stripe'] if i % 4 == 3 else P['body'])
+        for i in range(8):
+            sway = math.sin(t * speed - i * .5) * i * .18
+            by = 19 - max(0, i - 4) + round(sway)
+            R(4 - i, by, 4 - i, by + 1, P['stripe'] if i % 3 == 2 else P['body'])
 
-        # body: wide at the bottom, haunch bulging right
-        for y in range(19, 44):
-            x0 = round(16 - (y - 19) * .26)
-            x1 = round(26 + (y - 19) * .36)
-            R(x0, y, x1, y, P['body'])
-            Q(x0, y, P['rim'])
-        R(19, 21, 23, 31, P['chest'])
-        R(17, 34, 17, 43, P['line'])
-        R(24, 34, 24, 43, P['line'])
-        for i in range(11):
-            Q(30 - i // 4, 32 + i, P['line'])
-        R(15, 42, 19, 43, P['paw'])
-        R(22, 42, 26, 43, P['paw'])
-        R(29, 43, 35, 43, P['paw'])
+        # small round body
+        for y in range(14, 23):
+            grow = (1 if y >= 16 else 0) + (1 if y >= 19 else 0)
+            R(6 - grow, y, 14 + grow, y, P['body'])
+            Q(6 - grow, y, P['rim'])
+        R(9, 15, 11, 18, P['chest'])
+        R(10, 20, 10, 22, P['line'])
+        R(5, 21, 8, 22, P['paw'])
+        R(12, 21, 15, 22, P['paw'])
 
-        # head
-        R(14, 9 + hy, 28, 17 + hy, P['body'])
-        R(15, 8 + hy, 27, 18 + hy, P['body'])
-        R(13, 13 + hy, 13, 16 + hy, P['body'])
-        R(29, 13 + hy, 29, 16 + hy, P['body'])
-        R(16, 8 + hy, 26, 8 + hy, P['rim'])
+        # big cute head
+        R(3, 5 + hy, 17, 12 + hy, P['body'])
+        R(4, 4 + hy, 16, 13 + hy, P['body'])
+        R(6, 4 + hy, 14, 4 + hy, P['rim'])
         # ears (flick on twitch, perk up on tingle)
         perk = self.tingle > 0
         eL = -1 if perk else (1 if self.twitch and (self.twitch // 2) % 2 == 0 else 0)
         eR = -1 if perk else 0
-        R(14, 3 + eL, 15, 8 + hy, P['body'])
-        R(16, 5 + eL, 17, 8 + hy, P['body'])
-        Q(15, 5 + eL, P['ear'])
-        Q(15, 6 + eL, P['ear'])
-        Q(16, 7 + eL, P['ear'])
-        R(27, 3 + eR, 28, 8 + hy, P['body'])
-        R(25, 5 + eR, 26, 8 + hy, P['body'])
-        Q(27, 5 + eR, P['ear'])
-        Q(27, 6 + eR, P['ear'])
-        Q(26, 7 + eR, P['ear'])
-        # forehead stripes (nearly invisible on the black coat, bold on ginger)
-        R(19, 9 + hy, 19, 11 + hy, P['stripe'])
-        R(21, 9 + hy, 21, 12 + hy, P['stripe'])
-        R(23, 9 + hy, 23, 11 + hy, P['stripe'])
-        # eyes
-        for ex in (17, 23):
+        for j in range(4):
+            R(3, 1 + j + eL, 3 + j, 1 + j + eL, P['body'])
+            R(17 - j, 1 + j + eR, 17, 1 + j + eR, P['body'])
+        Q(4, 3 + eL, P['ear'])
+        Q(16, 3 + eR, P['ear'])
+        # forehead stripes (subtle on black, bold on ginger)
+        R(8, 5 + hy, 8, 6 + hy, P['stripe'])
+        R(10, 5 + hy, 10, 7 + hy, P['stripe'])
+        R(12, 5 + hy, 12, 6 + hy, P['stripe'])
+        # big sparkly eyes
+        for ex in (5, 13):
             if closed:
-                R(ex, 13 + hy, ex + 2, 13 + hy, P['lid'])
+                R(ex, 10 + hy, ex + 2, 10 + hy, P['lid'])
             elif happy:
-                Q(ex, 13 + hy, P['eye'])
-                Q(ex + 1, 12 + hy, P['eye'])
-                Q(ex + 2, 13 + hy, P['eye'])
+                Q(ex, 10 + hy, P['eye'])
+                Q(ex + 1, 9 + hy, P['eye'])
+                Q(ex + 2, 10 + hy, P['eye'])
             else:
-                top = 11 if wide else 12
-                R(ex, top + hy, ex + 2, 13 + hy, P['eye'])
-                R(ex + 1 + self.look, top + hy, ex + 1 + self.look, 13 + hy, P['pupil'])
-        # nose + mouth
-        Q(21, 15 + hy, P['ear'])
+                top = 7 if wide else 8
+                R(ex, top + hy, ex + 2, 10 + hy, P['eye'])
+                pc = ex + 1 + self.look
+                R(pc, top + hy, pc, 10 + hy, P['pupil'])
+                Q(ex if pc != ex else ex + 2, top + hy, (255, 250, 222))   # eye shine
+        if not wide:
+            Q(4, 11 + hy, P['blush'])
+            Q(16, 11 + hy, P['blush'])
+        # nose + tiny "w" mouth
+        Q(10, 11 + hy, P['ear'])
         if self.yawn > 0 and not sleepy:
-            R(20, 16 + hy, 22, 18 + hy, (122, 31, 51))
-            Q(21, 18 + hy, P['ear'])
+            R(9, 12 + hy, 11, 13 + hy, (122, 31, 51))
         else:
-            Q(20, 16 + hy, P['lid'])
-            Q(22, 16 + hy, P['lid'])
-        # whiskers (wiggle on twitch)
+            Q(9, 12 + hy, P['lid'])
+            Q(11, 12 + hy, P['lid'])
+        # whiskers
         wv = 1 if (self.twitch and self.twitch % 4 < 2) else 0
-        R(9, 14 + hy - wv, 12, 14 + hy - wv, P['whisker'])
-        R(10, 17 + hy + wv, 12, 17 + hy + wv, P['whisker'])
-        R(30, 14 + hy - wv, 33, 14 + hy - wv, P['whisker'])
-        R(30, 17 + hy + wv, 32, 17 + hy + wv, P['whisker'])
+        R(0, 10 + hy - wv, 2, 10 + hy - wv, P['whisker'])
+        R(1, 12 + hy + wv, 2, 12 + hy + wv, P['whisker'])
+        R(18, 10 + hy - wv, 20, 10 + hy - wv, P['whisker'])
+        R(18, 12 + hy + wv, 19, 12 + hy + wv, P['whisker'])
         # spidey-sense style "!" over the head
         if perk:
-            R(21, -4, 21, -1, (255, 224, 74))
-            Q(21, 1, (255, 224, 74))
+            R(10, -5, 10, -2, (255, 224, 74))
+            Q(10, 0, (255, 224, 74))
 
 
 # --------------------------------------------------------------------------- companions
@@ -701,7 +691,7 @@ VOICE = {
         poke=['Purrrr...', 'Mrrow!', 'Pat pat pat~', 'Right behind the ears...'],
         idle=['One tiny task at a time. Purr.', 'Hydrate, human. Then back to it.',
               'I will guard your focus. Mew.', 'Stretch break? I did, twice.'],
-        thwip='MEOW! You called?', sfx='MEOW!'),
+        thwip=None, sfx='MEOW!'),
 }
 
 
@@ -772,6 +762,12 @@ class DeskSpidey(tk.Tk):
         self.kind = 'cat' if 'Cat' in name else 'spidey'
         self.scene = build_scene(name)
         self.message, self.message_until = '', 0
+        self.win = getattr(self.scene, 'size', (W, H))
+        w, h = self.win
+        self.cv.config(width=w, height=h)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.pos = (max(0, sw - w), 0) if self.kind == 'spidey' else (max(0, sw - w - 24), max(0, sh - h - 64))
+        self.geometry(f'{w}x{h}+{self.pos[0]}+{self.pos[1]}')
         if greet:
             try:
                 with open(SAVE_PATH, 'w') as f:
@@ -788,50 +784,75 @@ class DeskSpidey(tk.Tk):
 
     def draw_hud(self):
         c, s = self.cv, self.scene
+        w, h = self.win
         c.delete('hud')
         k = s.imp
         if k is not None and k <= 2 and s.flat_frames:   # pure impact frames: no UI on top
             return
         timer = f'{self.focus_left // 60:02d}:{self.focus_left % 60:02d}' if self.focus_left else '25:00'
         dot = '#42e08a' if self.focus_active else ('#ffcc4d' if self.focus_left else '#6d7f9c')
-        self.rrect(8, 8, 156, 34, 9, fill='#0e1a2e', outline='#33507f', width=1, tags='hud')
-        c.create_oval(16, 17, 24, 25, fill=dot, outline='', tags='hud')
-        c.create_text(32, 21, anchor='w', fill='#f4f7ff', font=('Consolas', 9, 'bold'),
-                      text=f'{self.mood}  {timer}' + (' II' if self.focus_left and not self.focus_active else ''),
-                      tags='hud')
-        if self.focus_left:
-            frac = 1 - self.focus_left / (25 * 60)
-            c.create_rectangle(10, 38, 154, 42, fill='#16233a', outline='', tags='hud')
-            c.create_rectangle(10, 38, 10 + 144 * frac, 42, fill='#ed1826', outline='', tags='hud')
+        paused = ' II' if self.focus_left and not self.focus_active else ''
+        if s.compact:
+            if self.focus_left or self.mood != 'Ready':       # tiny status pill, only when useful
+                self.rrect(4, 4, 92, 20, 7, fill='#0e1a2e', outline='#33507f', width=1, tags='hud')
+                c.create_oval(10, 9, 16, 15, fill=dot, outline='', tags='hud')
+                c.create_text(22, 12, anchor='w', fill='#f4f7ff', font=('Consolas', 8, 'bold'),
+                              text=f'{self.mood} {timer}{paused}', tags='hud')
+                if self.focus_left:
+                    frac = 1 - self.focus_left / (25 * 60)
+                    c.create_rectangle(6, 23, 90, 26, fill='#16233a', outline='', tags='hud')
+                    c.create_rectangle(6, 23, 6 + 84 * frac, 26, fill='#ed1826', outline='', tags='hud')
+        else:
+            self.rrect(8, 8, 156, 34, 9, fill='#0e1a2e', outline='#33507f', width=1, tags='hud')
+            c.create_oval(16, 17, 24, 25, fill=dot, outline='', tags='hud')
+            c.create_text(32, 21, anchor='w', fill='#f4f7ff', font=('Consolas', 9, 'bold'),
+                          text=f'{self.mood}  {timer}{paused}', tags='hud')
+            if self.focus_left:
+                frac = 1 - self.focus_left / (25 * 60)
+                c.create_rectangle(10, 38, 154, 42, fill='#16233a', outline='', tags='hud')
+                c.create_rectangle(10, 38, 10 + 144 * frac, 42, fill='#ed1826', outline='', tags='hud')
         if self.message and s.tick < self.message_until:
             text = self.message[:58]
-            lines = max(1, math.ceil(len(text) / 23))
-            bh = 14 + 12 * lines
-            x2, hy = s.bubble
-            x1, y1 = x2 - 152, hy - 62
-            self.rrect(x1, y1, x2, y1 + bh, 10, fill='#fff8e8', outline='#131722', width=2, tags='hud')
-            c.create_polygon(x2 - 2, y1 + bh - 18, x2 + 22, hy - 14, x2 - 2, y1 + bh - 4,
-                             fill='#fff8e8', outline='#131722', width=2, tags='hud')
-            c.create_rectangle(x2 - 3, y1 + bh - 17, x2 - 1, y1 + bh - 5, fill='#fff8e8', outline='', tags='hud')
-            c.create_text(x1 + 9, y1 + 7, anchor='nw', width=134, fill='#151923',
-                          font=('Arial', 8, 'bold'), text=text, tags='hud')
+            if s.compact:                                   # small bubble above the cat's head
+                lines = max(1, math.ceil(len(text) / 20))
+                bh = 12 + 12 * lines
+                x1, x2, y1 = 4, w - 4, 4
+                cx = (CAT_O[0] + 10) * PX
+                self.rrect(x1, y1, x2, y1 + bh, 10, fill='#fff8e8', outline='#131722', width=2, tags='hud')
+                c.create_polygon(cx - 8, y1 + bh - 1, cx + 8, y1 + bh - 1, cx, y1 + bh + 9,
+                                 fill='#fff8e8', outline='#131722', width=2, tags='hud')
+                c.create_rectangle(cx - 7, y1 + bh - 3, cx + 7, y1 + bh + 1, fill='#fff8e8', outline='', tags='hud')
+                c.create_text(x1 + 8, y1 + 6, anchor='nw', width=w - 24, fill='#151923',
+                              font=('Arial', 8, 'bold'), text=text, tags='hud')
+            else:
+                lines = max(1, math.ceil(len(text) / 23))
+                bh = 14 + 12 * lines
+                x2, hy = s.bubble
+                x1, y1 = x2 - 152, hy - 62
+                self.rrect(x1, y1, x2, y1 + bh, 10, fill='#fff8e8', outline='#131722', width=2, tags='hud')
+                c.create_polygon(x2 - 2, y1 + bh - 18, x2 + 22, hy - 14, x2 - 2, y1 + bh - 4,
+                                 fill='#fff8e8', outline='#131722', width=2, tags='hud')
+                c.create_rectangle(x2 - 3, y1 + bh - 17, x2 - 1, y1 + bh - 5, fill='#fff8e8', outline='', tags='hud')
+                c.create_text(x1 + 9, y1 + 7, anchor='nw', width=134, fill='#151923',
+                              font=('Arial', 8, 'bold'), text=text, tags='hud')
         if k is not None and 3 <= k <= 9:      # THWIP! / MEOW! comic lettering
             cx, cy = s.center
-            size = 20 + min(k - 3, 3) * 4
+            size = s.text_base + min(k - 3, 3) * 4
             tx, ty = s.text_pos or (max(90, cx - 95), max(30, cy - 78))
             font = ('Arial Black', size, 'bold')
             for ox, oy in ((-2, -2), (2, -2), (-2, 2), (2, 2), (3, 3)):
                 c.create_text(tx + ox, ty + oy, text=s.sfx, font=font, fill='#10121b', angle=-9, tags='hud')
             c.create_text(tx, ty, text=s.sfx, font=font, fill='#ffe04a', angle=-9, tags='hud')
-        c.create_text(10, H - 10, anchor='w', fill='#abb8cb', font=('Arial', 7),
-                      text=f'\u2605 {self.sessions} focus sessions   \u2022   {len(self.missions)} missions',
-                      tags='hud')
+        if not s.compact:
+            c.create_text(10, h - 10, anchor='w', fill='#abb8cb', font=('Arial', 7),
+                          text=f'\u2605 {self.sessions} focus sessions   \u2022   {len(self.missions)} missions',
+                          tags='hud')
 
     def animate(self):
         s = self.scene
         if self.kind == 'cat':                             # eyes follow the mouse
-            px = self.winfo_pointerx() - (self.winfo_rootx() + (CAT_O[0] + 21) * PX)
-            s.look = -1 if px < -80 else (1 if px > 80 else 0)
+            px = self.winfo_pointerx() - (self.winfo_rootx() + (CAT_O[0] + 10) * PX)
+            s.look = -1 if px < -45 else (1 if px > 45 else 0)
         frame = s.step()
         self.photo = ImageTk.PhotoImage(frame)
         self.cv.delete('art')
@@ -876,7 +897,8 @@ class DeskSpidey(tk.Tk):
         text = text or self.voice['sfx']
         line = line or self.voice['thwip']
         self.scene.thwip(text)
-        self.say(line)
+        if line:
+            self.say(line)
 
     def auto_line(self):
         if random.random() < .45:
