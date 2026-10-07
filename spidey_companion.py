@@ -1,9 +1,16 @@
-"""Desk Companion v13: Spidey + a pixel-art black cat you can switch between.
+"""Desk Companion v14: Spidey, cozy cats, and five tiny pixel robot friends.
 
 Requires: pip install pillow
 Controls: click = swing / pet, double-click = THWIP / MEOW (impact!), right-click = menu, drag = move.
 Pick a companion: right-click -> "Choose companion"  (your choice is remembered).
 Start straight as the cat:  python spidey_companion.py cat
+
+What's new in v14
+  * Five new pixel robots inspired by the supplied reference: Scout, Buddy, Sprout,
+    Beeper, and Tinker, each with a distinct silhouette and color palette
+  * All companions share gentle idle animation, friendly click reactions, and the
+    existing focus, mission, and mood tools
+  * Companion selection and command-line shortcuts include every robot
 
 What's new in v13
   * NEW: Tiny chibi pixel cat (Midnight black or Ginger) on a little ledge - its window is only 150x141 px
@@ -133,10 +140,15 @@ def _load_hero():
     except (OSError, FileNotFoundError):
         d = ImageDraw.Draw(base)
         d.line((105, 0, 105, 60), fill=(240, 246, 255, 255), width=3)
-        d.ellipse((70, 150, 140, 270), fill=(40, 70, 180, 255), outline=(10, 12, 20, 255), width=3)
-        d.ellipse((62, 58, 148, 170), fill=(214, 28, 44, 255), outline=(10, 12, 20, 255), width=3)
-        d.polygon([(76, 126), (96, 118), (98, 134), (84, 138)], fill=(255, 255, 255, 255))
-        d.polygon([(134, 126), (114, 118), (112, 134), (126, 138)], fill=(255, 255, 255, 255))
+        ink = (17, 23, 42, 255)
+        d.ellipse((70, 150, 140, 270), fill=(45, 82, 180, 255), outline=ink, width=4)
+        d.ellipse((62, 58, 148, 170), fill=(226, 51, 70, 255), outline=ink, width=4)
+        # Friendly oversized mask eyes and a tiny chest spider brighten the fallback.
+        d.polygon([(76, 126), (94, 117), (101, 124), (96, 143), (83, 140)], fill=(255, 250, 236, 255))
+        d.polygon([(134, 126), (116, 117), (109, 124), (114, 143), (127, 140)], fill=(255, 250, 236, 255))
+        d.ellipse((99, 189, 111, 201), fill=(19, 31, 71, 255))
+        d.line((105, 195, 96, 210), fill=(19, 31, 71, 255), width=2)
+        d.line((105, 195, 114, 210), fill=(19, 31, 71, 255), width=2)
     return base
 
 
@@ -667,8 +679,142 @@ class CatScene:
             Q(10, 0, (255, 224, 74))
 
 
+# --------------------------------------------------------------------------- tiny pixel robots
+ROBOT_PALETTES = {
+    'Scout':  dict(shell=(100, 220, 228), shade=(35, 153, 177), dark=(20, 48, 66),
+                   screen=(18, 43, 61), glow=(126, 239, 255), accent=(255, 179, 59), shape='visor'),
+    'Buddy':  dict(shell=(112, 226, 237), shade=(49, 163, 189), dark=(25, 43, 58),
+                   screen=(31, 53, 68), glow=(25, 230, 255), accent=(255, 117, 78), shape='box'),
+    'Sprout': dict(shell=(215, 245, 229), shade=(109, 198, 188), dark=(26, 53, 67),
+                   screen=(217, 250, 241), glow=(27, 51, 65), accent=(255, 130, 86), shape='round'),
+    'Beeper': dict(shell=(55, 190, 207), shade=(29, 127, 157), dark=(20, 49, 64),
+                   screen=(104, 223, 229), glow=(29, 64, 83), accent=(240, 228, 83), shape='stack'),
+    'Tinker': dict(shell=(99, 180, 225), shade=(45, 112, 171), dark=(23, 45, 76),
+                   screen=(114, 194, 236), glow=(25, 52, 73), accent=(255, 192, 59), shape='box'),
+}
+
+
+class RobotScene:
+    """A small animated pixel robot; each named bot has its own silhouette."""
+    flat_frames = False
+    compact = True
+    size = (240, 150)
+    text_pos = (120, 36)
+    text_base = 12
+    bubble = (0, 0)
+    SCALE = 3
+
+    def __init__(self, name):
+        self.name = name
+        self.pal = ROBOT_PALETTES[name]
+        self.tick = 0
+        self.imp, self.imp_seed, self.sfx = None, 1, 'BEEP!'
+        self.shake, self.tingle = 0.0, 0
+        self.blink_seq, self.blink_cd, self.blink_frame = [], 60, 0
+        self.purr = self.chat = self.idle = 0
+        self.look = 0
+        self.parts = []
+        self.center = (120, 88)
+
+    def poke(self, amount=0):
+        self.purr = 55
+        for _ in range(2):
+            self.parts.append([random.randint(34, 46), 20, random.uniform(-.12, .12), -.28,
+                               34, 34, 'heart', random.choice(((255, 116, 153), (255, 197, 93)))])
+
+    def wave(self, ticks=60):
+        self.chat = max(self.chat, ticks)
+
+    def thwip(self, text='BEEP!'):
+        self.imp, self.imp_seed, self.sfx = 0, random.randint(1, 10 ** 6), text
+
+    def step(self):
+        self.tick += 1
+        t, k = self.tick, self.imp
+        self.chat = max(0, self.chat - 1)
+        self.purr = max(0, self.purr - 1)
+        if self.blink_seq:
+            self.blink_frame = self.blink_seq.pop(0)
+        else:
+            self.blink_frame = 0
+            self.blink_cd -= 1
+            if self.blink_cd <= 0:
+                self.blink_seq, self.blink_cd = [1, 2, 1], random.randint(65, 155)
+        sw, sh = self.size
+        im = Image.new('RGBA', (sw // self.SCALE, sh // self.SCALE), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        # soft floating glints and a little ground shadow
+        for i in range(5):
+            x = 8 + ((i * 17 + t // (8 + i)) % 64)
+            y = 5 + (i * 7) % 35
+            if (t // 12 + i) % 3 == 0:
+                d.point((x, y), fill=(189, 239, 240, 190))
+        d.ellipse((27, 39, 53, 43), fill=(10, 33, 48, 95))
+        bob = round(math.sin(t * (.19 if self.purr else .075)))
+        p, shape = self.pal, self.pal['shape']
+        x, y = 40, 13 + bob
+        # antenna and the characteristic silhouette
+        if shape == 'visor':
+            d.line((x + 15, y + 2, x + 15, y - 7), fill=p['dark'], width=2)
+            d.ellipse((x + 12, y - 12, x + 18, y - 6), fill=p['accent'], outline=p['dark'])
+            d.rectangle((x + 1, y + 1, x + 29, y + 18), fill=p['shell'], outline=p['dark'], width=2)
+            d.rectangle((x + 4, y + 4, x + 26, y + 13), fill=p['screen'], outline=p['shade'])
+            d.line((x + 8, y + 11, x + 22, y + 5), fill=p['glow'], width=2)
+        elif shape == 'round':
+            d.line((x + 15, y + 4, x + 15, y - 3), fill=p['dark'], width=2)
+            d.ellipse((x + 12, y - 7, x + 18, y - 1), fill=p['accent'], outline=p['dark'])
+            d.rounded_rectangle((x + 2, y + 1, x + 28, y + 21), radius=5, fill=p['shell'], outline=p['dark'], width=2)
+            d.rectangle((x + 5, y + 7, x + 25, y + 16), fill=p['screen'], outline=p['shade'])
+        elif shape == 'stack':
+            d.rounded_rectangle((x + 6, y + 1, x + 24, y + 27), radius=5, fill=p['shell'], outline=p['dark'], width=2)
+            for yy in (6, 13, 20):
+                d.rectangle((x + 8, y + yy, x + 22, y + yy + 3), fill=p['shade'])
+            d.rectangle((x + 9, y + 8, x + 21, y + 12), fill=p['screen'], outline=p['glow'])
+        else:
+            d.rectangle((x + 2, y + 2, x + 28, y + 21), fill=p['shell'], outline=p['dark'], width=2)
+            d.rectangle((x + 5, y + 5, x + 25, y + 16), fill=p['screen'], outline=p['shade'])
+            if shape == 'box':
+                d.line((x + 15, y + 2, x + 15, y - 5), fill=p['dark'], width=2)
+                d.rectangle((x + 13, y - 9, x + 17, y - 5), fill=p['accent'], outline=p['dark'])
+        # friendly face: little pixel eyes, blush, and a changing smile
+        blink = self.blink_frame > 0
+        for ex in (x + 10, x + 20):
+            ey = y + (10 if shape == 'visor' else 11)
+            d.line((ex, ey, ex + 2, ey), fill=p['glow'], width=2) if blink else d.rectangle((ex, ey, ex + 2, ey + 2), fill=p['glow'])
+        d.line((x + 13, y + 15, x + 17, y + 15), fill=p['dark'], width=1)
+        d.point((x + 7, y + 15), fill=(255, 142, 157, 255))
+        d.point((x + 23, y + 15), fill=(255, 142, 157, 255))
+        # body, tiny arms, and feet
+        by = y + (19 if shape == 'visor' else (23 if shape == 'stack' else 22))
+        d.rectangle((x + 6, by, x + 24, by + 11), fill=p['shell'], outline=p['dark'], width=2)
+        d.rectangle((x + 9, by + 3, x + 21, by + 5), fill=p['accent'])
+        d.line((x + 3, by + 2, x + 3, by + 8), fill=p['dark'], width=2)
+        d.line((x + 27, by + 2, x + 27, by + 8), fill=p['dark'], width=2)
+        d.rectangle((x + 8, by + 11, x + 12, by + 14), fill=p['dark'])
+        d.rectangle((x + 18, by + 11, x + 22, by + 14), fill=p['dark'])
+        d.rectangle((x + 6, by + 14, x + 13, by + 16), fill=p['accent'])
+        d.rectangle((x + 17, by + 14, x + 24, by + 16), fill=p['accent'])
+        if k is not None and k >= 3:
+            # celebratory pixel burst, kept small and friendly
+            r = 3 + (k % 4)
+            for dx, dy in ((-r, -2), (r, 1), (0, -r), (2, r)):
+                d.point((x + 15 + dx, y + 12 + dy), fill=(255, 218, 86, 255))
+        keep = []
+        for a, b, vx, vy, life, mx, kind, col in self.parts:
+            a, b, life = a + vx, b + vy, life - 1
+            if life > 0:
+                if kind == 'heart':
+                    d.rectangle((round(a), round(b), round(a + 1), round(b + 1)), fill=col + (255,))
+                keep.append([a, b, vx, vy, life, mx, kind, col])
+        self.parts = keep
+        if k is not None:
+            self.imp = k + 1 if k < 9 else None
+        return im.resize(self.size, Image.Resampling.NEAREST)
+
+
 # --------------------------------------------------------------------------- companions
-COMPANIONS = ('Spidey', 'Midnight Cat', 'Ginger Cat')
+COMPANIONS = ('Spidey', 'Midnight Cat', 'Ginger Cat', 'Scout Robot', 'Buddy Robot',
+              'Sprout Robot', 'Beeper Robot', 'Tinker Robot')
 
 
 def build_scene(name):
@@ -676,6 +822,8 @@ def build_scene(name):
         return CatScene('Midnight')
     if name == 'Ginger Cat':
         return CatScene('Ginger')
+    if name.endswith(' Robot'):
+        return RobotScene(name[:-6].rstrip())
     return Scene()
 
 
@@ -692,6 +840,12 @@ VOICE = {
         idle=['One tiny task at a time. Purr.', 'Hydrate, human. Then back to it.',
               'I will guard your focus. Mew.', 'Stretch break? I did, twice.'],
         thwip=None, sfx='MEOW!'),
+    'robot': dict(
+        greet='Beep boop! Your tiny helper is ready to roll.',
+        poke=['Boop received!', 'Happy circuits!', 'Beep! That tickles.'],
+        idle=['One little task at a time!', 'You have got this, human friend.',
+              'Charging up your focus!', 'Tiny break? I will keep watch.'],
+        thwip='BEEP!', sfx='BEEP!'),
 }
 
 
@@ -703,6 +857,16 @@ def load_choice():
             return 'Ginger Cat'
         if a.lower() in ('spidey', '--spidey'):
             return 'Spidey'
+        if a.lower() in ('robot', '--robot', 'scout', '--scout'):
+            return 'Scout Robot'
+        if a.lower() in ('buddy', '--buddy'):
+            return 'Buddy Robot'
+        if a.lower() in ('sprout', '--sprout'):
+            return 'Sprout Robot'
+        if a.lower() in ('beeper', '--beeper'):
+            return 'Beeper Robot'
+        if a.lower() in ('tinker', '--tinker'):
+            return 'Tinker Robot'
     try:
         with open(SAVE_PATH) as f:
             name = f.read().strip()
@@ -759,7 +923,7 @@ class DeskSpidey(tk.Tk):
     def pick(self, name, greet=True):
         """Switch to another companion."""
         self.companion = name
-        self.kind = 'cat' if 'Cat' in name else 'spidey'
+        self.kind = 'cat' if 'Cat' in name else ('robot' if name.endswith(' Robot') else 'spidey')
         self.scene = build_scene(name)
         self.message, self.message_until = '', 0
         self.win = getattr(self.scene, 'size', (W, H))
@@ -892,8 +1056,8 @@ class DeskSpidey(tk.Tk):
             self.scene.wave(60)
 
     def thwip(self, text=None, line=None):
-        if self.kind == 'cat' and text in (None, 'THWIP!', 'POW!'):
-            text = 'MEOW!'
+        if self.kind in ('cat', 'robot') and text in (None, 'THWIP!', 'POW!'):
+            text = 'MEOW!' if self.kind == 'cat' else 'BEEP!'
         text = text or self.voice['sfx']
         line = line or self.voice['thwip']
         self.scene.thwip(text)
@@ -974,6 +1138,9 @@ class DeskSpidey(tk.Tk):
             m.add_command(label='\U0001F431  Pet the cat',
                           command=lambda: self.scene.poke(0))
             m.add_command(label='\U0001F4A5  MEOW! (hop + starburst)', command=self.thwip)
+        elif self.kind == 'robot':
+            m.add_command(label='\U0001F916  Boop the robot', command=lambda: self.scene.poke(0))
+            m.add_command(label='\U0001F4AB  BEEP! (happy sparkles)', command=self.thwip)
         else:
             m.add_command(label='\U0001F578  Swing!',
                           command=lambda: self.scene.poke(random.choice((-.09, .09))))
