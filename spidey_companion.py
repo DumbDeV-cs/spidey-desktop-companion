@@ -929,6 +929,7 @@ class DeskSpidey(tk.Tk):
         self.sessions = 0
         self.mood = 'Ready'
         self.missions = []
+        self.completed_missions = []
         self.drag = None
         self.companion, self.kind, self.scene = 'Spidey', 'spidey', None
         self.pick(load_choice(), greet=False)
@@ -1149,9 +1150,20 @@ class DeskSpidey(tk.Tk):
     def complete_mission(self):
         if self.missions:
             done = self.missions.pop(0)
+            self.completed_missions.append(done)
+            self.completed_missions = self.completed_missions[-5:]
             self.thwip('POW!', 'Mission complete: ' + done[:28] + '!')
         else:
             self.say('No missions queued. Add a small win!')
+
+    def undo_last_mission(self):
+        """Restore the most recently completed mission to the front of the queue."""
+        if not self.completed_missions:
+            self.say('Nothing to undo yet. Complete a mission first!')
+            return
+        task = self.completed_missions.pop()
+        self.missions.insert(0, task)
+        self.say('Mission restored: ' + task[:28])
 
     def set_mood(self, mood):
         self.mood = mood
@@ -1181,6 +1193,7 @@ class DeskSpidey(tk.Tk):
         m.add_command(label='\u23F1  Start / pause 25-minute focus', command=self.focus)
         m.add_command(label='\U0001F3AF  Add / view mission', command=self.show_missions)
         m.add_command(label='\u2705  Complete next mission', command=self.complete_mission)
+        m.add_command(label='\u21A9  Undo last completed mission', command=self.undo_last_mission)
         moods = tk.Menu(m, tearoff=0)
         for label in ('Great', 'Okay', 'Stuck'):
             moods.add_command(label=label, command=lambda v=label: self.set_mood(v))
