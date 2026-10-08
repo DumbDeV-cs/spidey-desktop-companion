@@ -1,13 +1,15 @@
-"""Desk Companion v14: Spidey, cozy cats, and five tiny pixel robot friends.
+"""Desk Companion v15: Spidey, cozy cats, and five tiny pixel robot friends.
 
 Requires: pip install pillow
-Controls: click = swing / pet, double-click = THWIP / MEOW (impact!), right-click = menu, drag = move.
+Controls: click = interact, double-click = special move, scroll = switch companions,
+right-click = menu, drag = move.
 Pick a companion: right-click -> "Choose companion"  (your choice is remembered).
 Start straight as the cat:  python spidey_companion.py cat
 
 What's new in v14
   * Five new pixel robots inspired by the supplied reference: Scout, Buddy, Sprout,
     Beeper, and Tinker, each with a distinct silhouette and color palette
+  * Robots now look toward the pointer, wave, blink, and light up when greeted
   * All companions share gentle idle animation, friendly click reactions, and the
     existing focus, mission, and mood tools
   * Companion selection and command-line shortcuts include every robot
@@ -698,8 +700,8 @@ class RobotScene:
     """A small animated pixel robot; each named bot has its own silhouette."""
     flat_frames = False
     compact = True
-    size = (240, 150)
-    text_pos = (120, 36)
+    size = (240, 180)
+    text_pos = (120, 40)
     text_base = 12
     bubble = (0, 0)
     SCALE = 3
@@ -714,7 +716,7 @@ class RobotScene:
         self.purr = self.chat = self.idle = 0
         self.look = 0
         self.parts = []
-        self.center = (120, 88)
+        self.center = (120, 96)
 
     def poke(self, amount=0):
         self.purr = 55
@@ -743,13 +745,13 @@ class RobotScene:
         sw, sh = self.size
         im = Image.new('RGBA', (sw // self.SCALE, sh // self.SCALE), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        # soft floating glints and a little ground shadow
+        # Soft, slow-moving pixel glints keep the transparent desktop art lively.
         for i in range(5):
             x = 8 + ((i * 17 + t // (8 + i)) % 64)
             y = 5 + (i * 7) % 35
             if (t // 12 + i) % 3 == 0:
-                d.point((x, y), fill=(189, 239, 240, 190))
-        d.ellipse((27, 39, 53, 43), fill=(10, 33, 48, 95))
+                d.rectangle((x, y, x + 1, y + 1), fill=(189, 239, 240, 190))
+        d.ellipse((27, 51, 53, 55), fill=(10, 33, 48, 95))
         bob = round(math.sin(t * (.19 if self.purr else .075)))
         p, shape = self.pal, self.pal['shape']
         x, y = 40, 13 + bob
@@ -780,16 +782,41 @@ class RobotScene:
         blink = self.blink_frame > 0
         for ex in (x + 10, x + 20):
             ey = y + (10 if shape == 'visor' else 11)
-            d.line((ex, ey, ex + 2, ey), fill=p['glow'], width=2) if blink else d.rectangle((ex, ey, ex + 2, ey + 2), fill=p['glow'])
-        d.line((x + 13, y + 15, x + 17, y + 15), fill=p['dark'], width=1)
+            if blink:
+                d.line((ex, ey, ex + 2, ey), fill=p['glow'], width=2)
+            else:
+                d.rectangle((ex, ey, ex + 2, ey + 2), fill=p['glow'])
+                d.point((ex + self.look, ey + 1), fill=p['dark'])
+                d.point((ex, ey), fill=(248, 255, 255, 255))
+        smile_y = y + 16
+        if self.purr or self.chat:
+            d.point((x + 14, smile_y), fill=p['dark'])
+            d.point((x + 16, smile_y), fill=p['dark'])
+            d.point((x + 15, smile_y + 1), fill=p['dark'])
+        else:
+            d.line((x + 14, smile_y, x + 16, smile_y), fill=p['dark'], width=1)
         d.point((x + 7, y + 15), fill=(255, 142, 157, 255))
         d.point((x + 23, y + 15), fill=(255, 142, 157, 255))
         # body, tiny arms, and feet
         by = y + (19 if shape == 'visor' else (23 if shape == 'stack' else 22))
         d.rectangle((x + 6, by, x + 24, by + 11), fill=p['shell'], outline=p['dark'], width=2)
         d.rectangle((x + 9, by + 3, x + 21, by + 5), fill=p['accent'])
-        d.line((x + 3, by + 2, x + 3, by + 8), fill=p['dark'], width=2)
+        arm_wave = self.chat > 0
+        d.line((x + 3, by + (1 if arm_wave else 2), x + 3, by + 7), fill=p['dark'], width=2)
+        if arm_wave and (t // 5) % 2:
+            d.line((x + 3, by + 1, x, by - 2), fill=p['dark'], width=2)
+            d.point((x - 1, by - 3), fill=p['accent'])
+        else:
+            d.point((x + 3, by + 8), fill=p['glow'])
         d.line((x + 27, by + 2, x + 27, by + 8), fill=p['dark'], width=2)
+        d.point((x + 27, by + 8), fill=p['glow'])
+        # A tiny status badge changes from a button to a happy heart after a boop.
+        if self.purr:
+            d.point((x + 14, by + 7), fill=(255, 112, 154, 255))
+            d.point((x + 16, by + 7), fill=(255, 112, 154, 255))
+            d.point((x + 15, by + 8), fill=(255, 112, 154, 255))
+        else:
+            d.rectangle((x + 14, by + 7, x + 16, by + 9), fill=p['glow'])
         d.rectangle((x + 8, by + 11, x + 12, by + 14), fill=p['dark'])
         d.rectangle((x + 18, by + 11, x + 22, by + 14), fill=p['dark'])
         d.rectangle((x + 6, by + 14, x + 13, by + 16), fill=p['accent'])
@@ -911,6 +938,9 @@ class DeskSpidey(tk.Tk):
         self.cv.bind('<Double-Button-1>', lambda e: self.thwip())
         self.cv.bind('<Button-3>', self.menu)
         self.cv.bind('<Button-2>', self.menu)
+        self.cv.bind('<MouseWheel>', self.scroll_companion)  # Windows / macOS wheel
+        self.cv.bind('<Button-4>', lambda e: self.step_companion(-1))  # Linux wheel up
+        self.cv.bind('<Button-5>', lambda e: self.step_companion(1))   # Linux wheel down
         self.say(self.voice['greet'], 6)
         self.after(45000, self.auto_line)
         self.after(9000, self.auto_tingle)
@@ -1017,6 +1047,9 @@ class DeskSpidey(tk.Tk):
         if self.kind == 'cat':                             # eyes follow the mouse
             px = self.winfo_pointerx() - (self.winfo_rootx() + (CAT_O[0] + 10) * PX)
             s.look = -1 if px < -45 else (1 if px > 45 else 0)
+        elif self.kind == 'robot':                        # tiny screen eyes follow the pointer too
+            px = self.winfo_pointerx() - (self.winfo_rootx() + self.win[0] // 2)
+            s.look = -1 if px < -55 else (1 if px > 55 else 0)
         frame = s.step()
         self.photo = ImageTk.PhotoImage(frame)
         self.cv.delete('art')
@@ -1155,6 +1188,18 @@ class DeskSpidey(tk.Tk):
         m.add_separator()
         m.add_command(label='Quit Desk Companion', command=self.destroy)
         m.tk_popup(e.x_root, e.y_root)
+
+    def step_companion(self, direction):
+        """Move one place through the companion carousel and keep the choice saved."""
+        index = COMPANIONS.index(self.companion)
+        self.pick(COMPANIONS[(index + direction) % len(COMPANIONS)])
+        return 'break'
+
+    def scroll_companion(self, e):
+        """Wheel down selects the next friend; wheel up selects the previous one."""
+        if not e.delta:
+            return 'break'
+        return self.step_companion(1 if e.delta < 0 else -1)
 
 
 if __name__ == '__main__':
